@@ -1,11 +1,21 @@
 @echo off
 REM 2TTS Build Script for Windows
-REM This script builds the 2TTS application into a Windows executable
+REM Usage: build.bat [release VERSION]
+REM   build.bat              - Build app only (for development)
+REM   build.bat release 1.0.1 - Full release build with version 1.0.1
 
 echo ============================================
 echo 2TTS Build Script
 echo ============================================
 echo.
+
+REM Check if this is a release build
+set "RELEASE_BUILD=0"
+set "RELEASE_VERSION="
+if "%~1"=="release" (
+    set "RELEASE_BUILD=1"
+    set "RELEASE_VERSION=%~2"
+)
 
 REM Check if Python is available
 python --version >nul 2>&1
@@ -36,6 +46,26 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM For release builds, use the Python script
+if "%RELEASE_BUILD%"=="1" (
+    echo.
+    if "%RELEASE_VERSION%"=="" (
+        echo Error: Version required for release build
+        echo Usage: build.bat release VERSION
+        echo Example: build.bat release 1.0.1
+        pause
+        exit /b 1
+    )
+    echo Running full release build v%RELEASE_VERSION%...
+    python scripts\build_release.py %RELEASE_VERSION%
+    if errorlevel 1 (
+        echo Error: Release build failed
+        exit /b 1
+    )
+    pause
+    exit /b 0
+)
+
 REM Clean previous build
 echo Cleaning previous build...
 if exist "build" rmdir /s /q build
@@ -55,26 +85,9 @@ echo ============================================
 echo Build completed successfully!
 echo Output: dist\2TTS\
 echo ============================================
-
-REM Build installer with Inno Setup (if available)
-set "ISCC_EXE="
-if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
-if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%ProgramFiles%\Inno Setup 6\ISCC.exe"
-
-if not "%ISCC_EXE%"=="" (
-    echo.
-    echo Building installer (Inno Setup)...
-    if exist "dist_installer" rmdir /s /q dist_installer
-    "%ISCC_EXE%" "installer\2TTS.iss"
-    if errorlevel 1 (
-        echo Error: Installer build failed
-        exit /b 1
-    )
-    echo Installer output: dist_installer\
-) else (
-    echo.
-    echo Inno Setup compiler (ISCC.exe) not found - skipping installer build.
-    echo Install Inno Setup 6 to produce Setup.exe (installer\2TTS.iss)
-)
+echo.
+echo To create a release with installer, run:
+echo   build.bat release
+echo.
 
 pause

@@ -22,7 +22,7 @@ except Exception:
     _HAS_PACKAGING = False
 
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.7"
 
 GITHUB_REPO = "TuanTrong2290/2TTS"
 UPDATE_MANIFEST_URL = f"https://github.com/{GITHUB_REPO}/releases/latest/download/latest.json"
@@ -133,7 +133,18 @@ class UpdateChecker:
         except Exception as e:
             return False, None, f"Update check error: {e}"
 
-    def download_update(self, update: UpdateInfo) -> Tuple[bool, Optional[Path], str]:
+    def download_update(
+        self,
+        update: UpdateInfo,
+        progress_callback: Optional[callable] = None,
+    ) -> Tuple[bool, Optional[Path], str]:
+        """
+        Download update with optional progress tracking.
+        
+        Args:
+            update: UpdateInfo with version, url, sha256
+            progress_callback: Optional callback(downloaded_bytes, total_bytes, percent)
+        """
         self._config_dir.mkdir(parents=True, exist_ok=True)
         self._updates_dir.mkdir(parents=True, exist_ok=True)
 
@@ -156,6 +167,9 @@ class UpdateChecker:
             resp = requests.get(update.url, stream=True, timeout=60)
             resp.raise_for_status()
 
+            total_size = int(resp.headers.get("content-length", 0))
+            downloaded = 0
+
             hasher = hashlib.sha256()
             with open(tmp, "wb") as f:
                 for chunk in resp.iter_content(chunk_size=1024 * 1024):
@@ -163,6 +177,11 @@ class UpdateChecker:
                         continue
                     f.write(chunk)
                     hasher.update(chunk)
+                    downloaded += len(chunk)
+                    
+                    if progress_callback and total_size > 0:
+                        percent = int((downloaded / total_size) * 100)
+                        progress_callback(downloaded, total_size, percent)
 
             actual = hasher.hexdigest().lower()
             if actual != update.sha256:

@@ -4,13 +4,17 @@ from PyQt6.QtWidgets import (
     QLineEdit, QTableWidget, QTableWidgetItem, QHeaderView,
     QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox, QGroupBox, QTabWidget,
     QWidget, QMessageBox, QFileDialog, QAbstractItemView,
-    QFormLayout, QDialogButtonBox, QScrollArea, QApplication
+    QFormLayout, QDialogButtonBox, QScrollArea, QApplication, QProgressDialog
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from typing import List, Optional
 
 from core.models import APIKey, Proxy, ProxyType, Voice, VoiceSettings
 from services.localization import tr, get_localization
+from ui.workers import (
+    ValidateKeysWorker, TestProxiesWorker, FetchVoiceWorker,
+    SearchVoiceLibraryWorker, VoicePreviewWorker, CloneVoiceWorker
+)
 
 
 class APIKeyDialog(QDialog):
@@ -100,20 +104,37 @@ class APIKeyDialog(QDialog):
         self._refresh_table()
     
     def _validate_all(self):
-        from services.elevenlabs import ElevenLabsAPI
+        if not self._keys:
+            QMessageBox.information(self, "Validation", "No keys to validate")
+            return
         
-        api = ElevenLabsAPI()
+        # Create progress dialog
+        self._progress_dialog = QProgressDialog(
+            "Validating API keys...", "Cancel", 0, len(self._keys), self
+        )
+        self._progress_dialog.setWindowTitle("Validating")
+        self._progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self._progress_dialog.setMinimumDuration(0)
         
-        validated_count = 0
-        
-        for key in self._keys:
-            success, msg = api.validate_key(key)
-            if success:
-                validated_count += 1
+        # Create and start worker
+        self._validate_worker = ValidateKeysWorker(self._keys, self)
+        self._validate_worker.progress.connect(self._on_validate_progress)
+        self._validate_worker.finished.connect(self._on_validate_finished)
+        self._progress_dialog.canceled.connect(self._validate_worker.cancel)
+        self._validate_worker.start()
+    
+    def _on_validate_progress(self, current: int, total: int, message: str):
+        if hasattr(self, '_progress_dialog') and self._progress_dialog:
+            self._progress_dialog.setValue(current)
+            self._progress_dialog.setLabelText(message)
+    
+    def _on_validate_finished(self, validated_count: int, total_count: int):
+        if hasattr(self, '_progress_dialog') and self._progress_dialog:
+            self._progress_dialog.close()
+            self._progress_dialog = None
         
         self._refresh_table()
-        
-        QMessageBox.information(self, "Validation", f"Validated {validated_count}/{len(self._keys)} keys")
+        QMessageBox.information(self, "Validation", f"Validated {validated_count}/{total_count} keys")
     
     def _save(self):
         self.keys_updated.emit(self._keys)
@@ -130,13 +151,8 @@ class AddAPIKeyDialog(QDialog):
         
         layout = QFormLayout(self)
         
-        self.name_edit = QLineEdit()
-        self.name_edit.setPlaceholderText("My ElevenLabs Key")
-        layout.addRow("Name:", self.name_edit)
-        
         self.key_edit = QLineEdit()
-        self.key_edit.setPlaceholderText("xi-...")
-        self.key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.key_edit.setPlaceholderText("sk_...")
         layout.addRow("API Key:", self.key_edit)
         
         buttons = QDialogButtonBox(
@@ -147,10 +163,9 @@ class AddAPIKeyDialog(QDialog):
         layout.addRow(buttons)
     
     def get_key(self) -> APIKey:
-        return APIKey(
-            name=self.name_edit.text(),
-            key=self.key_edit.text()
-        )
+        key = self.key_edit.text().strip()
+        name = key[:8] + "..." if len(key) > 8 else key
+        return APIKey(name=name, key=key)
 
 
 class ProxyDialog(QDialog):
@@ -233,18 +248,37 @@ class ProxyDialog(QDialog):
         self._refresh_table()
     
     def _test_all(self):
-        import requests
+        if not self._proxies:
+            QMessageBox.information(self, "Test", "No proxies to test")
+            return
         
-        for proxy in self._proxies:
-            try:
-                proxies = {"http": proxy.get_url(), "https": proxy.get_url()}
-                response = requests.get("https://api.ipify.org", proxies=proxies, timeout=10)
-                proxy.is_healthy = response.status_code == 200
-            except:
-                proxy.is_healthy = False
+        # Create progress dialog
+        self._progress_dialog = QProgressDialog(
+            "Testing proxies...", "Cancel", 0, len(self._proxies), self
+        )
+        self._progress_dialog.setWindowTitle("Testing")
+        self._progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self._progress_dialog.setMinimumDuration(0)
+        
+        # Create and start worker
+        self._test_worker = TestProxiesWorker(self._proxies, self)
+        self._test_worker.progress.connect(self._on_test_progress)
+        self._test_worker.finished.connect(self._on_test_finished)
+        self._progress_dialog.canceled.connect(self._test_worker.cancel)
+        self._test_worker.start()
+    
+    def _on_test_progress(self, current: int, total: int, message: str):
+        if hasattr(self, '_progress_dialog') and self._progress_dialog:
+            self._progress_dialog.setValue(current)
+            self._progress_dialog.setLabelText(message)
+    
+    def _on_test_finished(self, healthy_count: int, total_count: int):
+        if hasattr(self, '_progress_dialog') and self._progress_dialog:
+            self._progress_dialog.close()
+            self._progress_dialog = None
         
         self._refresh_table()
-        QMessageBox.information(self, "Test", "Proxy test complete")
+        QMessageBox.information(self, "Test", f"Proxy test complete: {healthy_count}/{total_count} healthy")
     
     def _save(self):
         self.proxies_updated.emit(self._proxies)
@@ -379,14 +413,18 @@ class AddVoiceByIdDialog(QDialog):
             return
         
         self.status_label.setText("Fetching...")
+        self.status_label.setStyleSheet("")
         self.fetch_btn.setEnabled(False)
         
-        from services.elevenlabs import ElevenLabsAPI
-        api = ElevenLabsAPI()
-        
-        voice, message = api.get_voice_by_id(voice_id, self._api_key, self._proxy)
-        
+        # Create and start worker
+        self._fetch_worker = FetchVoiceWorker(voice_id, self._api_key, self._proxy, self)
+        self._fetch_worker.finished.connect(self._on_fetch_finished)
+        self._fetch_worker.error.connect(self._on_fetch_error)
+        self._fetch_worker.start()
+    
+    def _on_fetch_finished(self, voice, message: str):
         self.fetch_btn.setEnabled(True)
+        voice_id = self.voice_id_edit.text().strip()
         
         if voice:
             self._fetched_voice = voice
@@ -413,6 +451,13 @@ class AddVoiceByIdDialog(QDialog):
             self.status_label.setText(message)
             self.status_label.setStyleSheet("color: red;")
             self.add_btn.setEnabled(False)
+    
+    def _on_fetch_error(self, error: str):
+        self.fetch_btn.setEnabled(True)
+        self._fetched_voice = None
+        self.status_label.setText(f"Error: {error}")
+        self.status_label.setStyleSheet("color: red;")
+        self.add_btn.setEnabled(False)
     
     def _add_voice(self):
         if self._fetched_voice:
@@ -1116,26 +1161,31 @@ class VoiceCloneDialog(QDialog):
         self.status_label.setText("Uploading and processing audio samples...")
         self.status_label.setStyleSheet("color: orange;")
         
-        # Force UI update
-        QApplication.processEvents()
-        
-        from services.elevenlabs import ElevenLabsAPI
-        api = ElevenLabsAPI()
-        
         description = self.description_edit.text().strip() or None
         remove_noise = self.remove_noise_check.isChecked()
         
-        voice, error = api.clone_voice(
+        # Create and start worker
+        self._clone_worker = CloneVoiceWorker(
             name=name,
             files=self._selected_files,
             api_key=self._api_key,
             description=description,
-            remove_background_noise=remove_noise,
-            proxy=self._proxy
+            remove_noise=remove_noise,
+            proxy=self._proxy,
+            parent=self
         )
-        
+        self._clone_worker.progress.connect(self._on_clone_progress)
+        self._clone_worker.finished.connect(self._on_clone_finished)
+        self._clone_worker.error.connect(self._on_clone_error)
+        self._clone_worker.start()
+    
+    def _on_clone_progress(self, message: str):
+        self.status_label.setText(message)
+    
+    def _on_clone_finished(self, voice, error: str):
         self.clone_btn.setEnabled(True)
         self.clone_btn.setText("Clone Voice")
+        name = self.name_edit.text().strip()
         
         if voice:
             self.status_label.setText(f"Voice '{name}' cloned successfully!")
@@ -1147,6 +1197,13 @@ class VoiceCloneDialog(QDialog):
             self.status_label.setText(f"Error: {error}")
             self.status_label.setStyleSheet("color: red;")
             QMessageBox.warning(self, "Clone Failed", f"Failed to clone voice:\n{error}")
+    
+    def _on_clone_error(self, error: str):
+        self.clone_btn.setEnabled(True)
+        self.clone_btn.setText("Clone Voice")
+        self.status_label.setText(f"Error: {error}")
+        self.status_label.setStyleSheet("color: red;")
+        QMessageBox.warning(self, "Clone Failed", f"Clone error: {error}")
 
 
 class VoiceLibraryBrowserDialog(QDialog):
@@ -1307,27 +1364,33 @@ class VoiceLibraryBrowserDialog(QDialog):
         self.search_btn.setEnabled(False)
         self.search_btn.setText("Loading...")
         self.table.setRowCount(0)
+        self.results_label.setText("Searching...")
         
-        from services.elevenlabs import ElevenLabsAPI
-        api = ElevenLabsAPI()
+        search_params = {
+            "page_size": 50,
+            "search": self.search_edit.text() or None,
+            "gender": self.gender_combo.currentData() or None,
+            "age": self.age_combo.currentData() or None,
+            "language": self.language_combo.currentData() or None,
+            "use_case": self.use_case_combo.currentData() or None,
+            "sort": self.sort_combo.currentData() or None
+        }
         
-        voices, has_more, error = api.browse_voice_library(
-            api_key=self._api_key,
-            proxy=self._proxy,
-            page_size=50,
-            search=self.search_edit.text() or None,
-            gender=self.gender_combo.currentData() or None,
-            age=self.age_combo.currentData() or None,
-            language=self.language_combo.currentData() or None,
-            use_case=self.use_case_combo.currentData() or None,
-            sort=self.sort_combo.currentData() or None
+        # Create and start worker
+        self._search_worker = SearchVoiceLibraryWorker(
+            self._api_key, self._proxy, search_params, self
         )
-        
+        self._search_worker.finished.connect(self._on_search_finished)
+        self._search_worker.error.connect(self._on_search_error)
+        self._search_worker.start()
+    
+    def _on_search_finished(self, voices: list, has_more: bool, error: str):
         self.search_btn.setEnabled(True)
         self.search_btn.setText("Search")
         
         if error:
             QMessageBox.warning(self, "Error", f"Failed to load voices: {error}")
+            self.results_label.setText("Search failed")
             return
         
         self._voices_data = voices
@@ -1335,6 +1398,12 @@ class VoiceLibraryBrowserDialog(QDialog):
         
         more_text = " (more available)" if has_more else ""
         self.results_label.setText(f"Found {len(voices)} voices{more_text}")
+    
+    def _on_search_error(self, error: str):
+        self.search_btn.setEnabled(True)
+        self.search_btn.setText("Search")
+        QMessageBox.warning(self, "Error", f"Search failed: {error}")
+        self.results_label.setText("Search failed")
     
     def _populate_table(self):
         """Populate table with voice data"""
@@ -1420,31 +1489,28 @@ class VoiceLibraryBrowserDialog(QDialog):
             QMessageBox.warning(self, "Error", "No voice ID available")
             return
         
-        from services.elevenlabs import ElevenLabsAPI
         import tempfile
         import os
         
-        api = ElevenLabsAPI()
         preview_text = "Hello! This is a voice preview sample from the ElevenLabs voice library."
         preview_path = os.path.join(tempfile.gettempdir(), "2tts_library_preview.mp3")
         
         self.preview_btn.setEnabled(False)
         self.preview_btn.setText("Loading...")
         
-        from core.models import VoiceSettings
-        success, message, duration = api.text_to_speech(
-            text=preview_text,
-            voice_id=voice_id,
-            api_key=self._api_key,
-            output_path=preview_path,
-            settings=VoiceSettings(),
-            proxy=self._proxy
+        # Create and start worker
+        self._preview_worker = VoicePreviewWorker(
+            preview_text, voice_id, self._api_key, preview_path, None, self._proxy, self
         )
-        
+        self._preview_worker.finished.connect(self._on_preview_finished)
+        self._preview_worker.error.connect(self._on_preview_error)
+        self._preview_worker.start()
+    
+    def _on_preview_finished(self, success: bool, output_path: str, message: str):
         self.preview_btn.setEnabled(True)
         self.preview_btn.setText("Preview")
         
-        if success:
+        if success and output_path:
             from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
             from PyQt6.QtCore import QUrl
             
@@ -1453,10 +1519,15 @@ class VoiceLibraryBrowserDialog(QDialog):
                 self._audio_output = QAudioOutput()
                 self._audio_player.setAudioOutput(self._audio_output)
             
-            self._audio_player.setSource(QUrl.fromLocalFile(preview_path))
+            self._audio_player.setSource(QUrl.fromLocalFile(output_path))
             self._audio_player.play()
         else:
             QMessageBox.warning(self, "Preview Failed", f"Failed to generate preview: {message}")
+    
+    def _on_preview_error(self, error: str):
+        self.preview_btn.setEnabled(True)
+        self.preview_btn.setText("Preview")
+        QMessageBox.warning(self, "Preview Failed", f"Preview error: {error}")
     
     def _add_voice(self):
         """Add selected voice to user's account"""

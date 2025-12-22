@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QToolBar, QStatusBar, QMenuBar, QMenu, QMessageBox,
     QFileDialog, QLabel, QPushButton, QComboBox, QGroupBox,
     QTextEdit, QCheckBox, QSpinBox, QApplication, QSystemTrayIcon,
-    QDialog, QTabWidget
+    QDialog, QTabWidget, QProgressDialog, QToolBox, QFrame
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QEvent, QUrl
 from PyQt6.QtGui import QAction, QKeySequence, QIcon
@@ -29,7 +29,8 @@ from services.audio import SRTGenerator, MP3Concatenator
 from services.language import LanguageDetector
 from ui.widgets import (
     DropZone, LineTableWidget, VoiceSettingsWidget, 
-    ProgressWidget, CreditWidget, FilterWidget, ThreadStatusWidget
+    ProgressWidget, CreditWidget, FilterWidget, ThreadStatusWidget,
+    TableEmptyState
 )
 from ui.dialogs import (
     APIKeyDialog, ProxyDialog, VoiceLibraryDialog, SettingsDialog
@@ -54,11 +55,21 @@ from services.updater import get_update_checker, UpdateInfo
 from services.localization import tr, set_language, get_localization
 
 
+class LineUpdateEvent(QEvent):
+    """Custom event for line updates"""
+    EVENT_TYPE = QEvent.Type(QEvent.registerEventType())
+    
+    def __init__(self, line: TextLine):
+        super().__init__(self.EVENT_TYPE)
+        self.line = line
+
+
 class MainWindow(QMainWindow):
     """Main application window"""
 
     update_check_result = pyqtSignal(bool, object, str, bool)  # available, UpdateInfo|None, message, show_result
     update_download_result = pyqtSignal(bool, object, object, str)  # success, UpdateInfo, Path|None, message
+    update_download_progress = pyqtSignal(int, int, int)  # downloaded, total, percent
     
     def __init__(self):
         super().__init__()
@@ -106,9 +117,11 @@ class MainWindow(QMainWindow):
         self._update_install_scheduled = False
         self._pending_update_info: Optional[UpdateInfo] = None
         self._pending_update_installer: Optional[Path] = None
+        self._update_progress_dialog: Optional[QProgressDialog] = None
 
         self.update_check_result.connect(self._on_update_check_result)
         self.update_download_result.connect(self._on_update_download_result)
+        self.update_download_progress.connect(self._on_update_download_progress)
 
         ready_update = self._update_checker.get_ready_update()
         if ready_update and self._update_checker.is_newer_version(ready_update[0].version):
@@ -165,18 +178,19 @@ class MainWindow(QMainWindow):
         # TTS Tab
         tts_tab = QWidget()
         tts_layout = QHBoxLayout(tts_tab)
-        tts_layout.setContentsMargins(0, 0, 0, 0)
+        tts_layout.setContentsMargins(12, 12, 12, 12)
         
         # Main splitter
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setHandleWidth(4)
         
         # Left panel - main content
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(16, 16, 16, 16)
+        left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(12)
         
-        # Drop zone
+        # Drop zone (starts in full mode, switches to compact when lines exist)
         self._drop_zone = DropZone()
         self._drop_zone.files_dropped.connect(self._on_files_dropped)
         left_layout.addWidget(self._drop_zone)
@@ -185,6 +199,11 @@ class MainWindow(QMainWindow):
         self._filter_widget = FilterWidget()
         self._filter_widget.filter_changed.connect(self._on_filter_changed)
         left_layout.addWidget(self._filter_widget)
+        
+        # Empty state (shown when no lines)
+        self._empty_state = TableEmptyState()
+        self._empty_state.import_clicked.connect(self._on_import_files)
+        left_layout.addWidget(self._empty_state)
         
         # Table
         self._table = LineTableWidget()
@@ -197,63 +216,86 @@ class MainWindow(QMainWindow):
         self._table.merge_requested.connect(self._on_merge_lines)
         left_layout.addWidget(self._table)
         
-        # Progress
+        # Initial state: show empty state, hide table
+        self._update_empty_state()
+        
+        # Progress Bar
         self._progress = ProgressWidget()
         left_layout.addWidget(self._progress)
         
-        # Control buttons
-        btn_layout = QHBoxLayout()
+        # Control Buttons Area (Bottom of Left Panel)
+        controls_frame = QFrame()
+        controls_frame.setObjectName("controlsFrame")
+        controls_frame.setStyleSheet("""
+            QFrame#controlsFrame {
+                background-color: transparent;
+                border-top: 1px solid #414868;
+                padding-top: 10px;
+            }
+        """)
+        controls_layout = QHBoxLayout(controls_frame)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Transport Controls
+        transport_layout = QHBoxLayout()
+        transport_layout.setSpacing(10)
         
         self._start_btn = QPushButton("▶ " + tr("start"))
         self._start_btn.setObjectName("primaryButton")
+        self._start_btn.setMinimumHeight(40)
+        self._start_btn.setMinimumWidth(100)
         self._start_btn.clicked.connect(self._on_start)
-        btn_layout.addWidget(self._start_btn)
         
         self._pause_btn = QPushButton("⏸ " + tr("pause"))
+        self._pause_btn.setMinimumHeight(40)
         self._pause_btn.clicked.connect(self._on_pause)
         self._pause_btn.setEnabled(False)
-        btn_layout.addWidget(self._pause_btn)
         
         self._stop_btn = QPushButton("⏹ " + tr("stop"))
         self._stop_btn.setObjectName("dangerButton")
+        self._stop_btn.setMinimumHeight(40)
         self._stop_btn.clicked.connect(self._on_stop)
         self._stop_btn.setEnabled(False)
-        btn_layout.addWidget(self._stop_btn)
         
-        btn_layout.addStretch()
+        transport_layout.addWidget(self._start_btn)
+        transport_layout.addWidget(self._pause_btn)
+        transport_layout.addWidget(self._stop_btn)
         
-        self._join_btn = QPushButton(tr("join_mp3"))
-        self._join_btn.clicked.connect(self._on_join_mp3)
-        btn_layout.addWidget(self._join_btn)
+        controls_layout.addLayout(transport_layout)
+        controls_layout.addStretch()
         
-        self._srt_btn = QPushButton(tr("generate_srt"))
-        self._srt_btn.clicked.connect(self._on_generate_srt)
-        btn_layout.addWidget(self._srt_btn)
+        # Export Menu Button (consolidated export actions)
+        self._export_btn = QPushButton("📤 " + tr("export") + " ▾")
+        self._export_btn.setMinimumHeight(40)
+        self._export_btn.setToolTip("Export options: Join MP3, Generate SRT, Open folder")
         
-        self._folder_btn = QPushButton("📂 " + tr("open_folder"))
-        self._folder_btn.clicked.connect(self._on_open_folder)
-        btn_layout.addWidget(self._folder_btn)
+        export_menu = QMenu(self._export_btn)
+        export_menu.addAction("🎵 " + tr("join_mp3"), self._on_join_mp3)
+        export_menu.addAction("📝 " + tr("generate_srt"), self._on_generate_srt)
+        export_menu.addSeparator()
+        export_menu.addAction("📂 " + tr("open_folder"), self._on_open_folder)
+        self._export_btn.setMenu(export_menu)
         
-        left_layout.addLayout(btn_layout)
+        controls_layout.addWidget(self._export_btn)
+        left_layout.addWidget(controls_frame)
         
         splitter.addWidget(left_panel)
         
-        # Right panel - settings (scrollable)
-        from PyQt6.QtWidgets import QScrollArea
-        right_scroll = QScrollArea()
-        right_scroll.setWidgetResizable(True)
-        right_scroll.setMaximumWidth(370)
-        right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        
+        # Right panel - Tools and Settings using QToolBox
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(16, 16, 16, 16)
-        right_layout.setSpacing(12)
+        right_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Voice selection
-        voice_group = QGroupBox("Voice")
-        voice_layout = QVBoxLayout(voice_group)
+        self._toolbox = QToolBox()
+        self._toolbox.setMinimumWidth(340)
         
+        # 1. Voice Settings Group
+        voice_page = QWidget()
+        voice_page_layout = QVBoxLayout(voice_page)
+        voice_page_layout.setContentsMargins(10, 10, 10, 10)
+        voice_page_layout.setSpacing(12)
+        
+        # Voice Selection Row
         voice_select_layout = QHBoxLayout()
         voice_select_layout.addWidget(QLabel(tr("default_voice") + ":"))
         self._voice_combo = QComboBox()
@@ -261,89 +303,113 @@ class MainWindow(QMainWindow):
         voice_select_layout.addWidget(self._voice_combo)
         
         self._voice_lib_btn = QPushButton("📚")
-        self._voice_lib_btn.setFixedWidth(40)
-        self._voice_lib_btn.setToolTip("Voice Library")
+        self._voice_lib_btn.setFixedWidth(36)
+        self._voice_lib_btn.setToolTip("Open Voice Library")
         self._voice_lib_btn.clicked.connect(self._on_voice_library)
         voice_select_layout.addWidget(self._voice_lib_btn)
         
         self._voice_preview_btn = QPushButton("🔊")
-        self._voice_preview_btn.setFixedWidth(40)
-        self._voice_preview_btn.setToolTip("Preview Voice")
+        self._voice_preview_btn.setFixedWidth(36)
+        self._voice_preview_btn.setToolTip("Preview Selected Voice")
         self._voice_preview_btn.clicked.connect(self._on_voice_preview)
         voice_select_layout.addWidget(self._voice_preview_btn)
-        voice_layout.addLayout(voice_select_layout)
         
-        # Apply voice to selected lines button
-        apply_voice_layout = QHBoxLayout()
+        voice_page_layout.addLayout(voice_select_layout)
+        
+        # Voice Settings Widget
+        self._voice_settings = VoiceSettingsWidget(title="Params")
+        self._voice_settings.settings_changed.connect(self._on_voice_settings_changed)
+        voice_page_layout.addWidget(self._voice_settings)
+        
+        # Apply Buttons
+        apply_layout = QHBoxLayout()
         self._apply_voice_btn = QPushButton(tr("apply_to_selected"))
-        self._apply_voice_btn.setToolTip("Apply selected voice to selected lines")
+        self._apply_voice_btn.setToolTip("Apply current voice to selected lines")
         self._apply_voice_btn.clicked.connect(self._on_apply_voice_to_selected)
-        apply_voice_layout.addWidget(self._apply_voice_btn)
+        apply_layout.addWidget(self._apply_voice_btn)
         
         self._apply_voice_all_btn = QPushButton(tr("apply_to_all"))
-        self._apply_voice_all_btn.setToolTip("Apply selected voice to all lines")
+        self._apply_voice_all_btn.setToolTip("Apply current voice to all lines in project")
         self._apply_voice_all_btn.clicked.connect(self._on_apply_voice_to_all)
-        apply_voice_layout.addWidget(self._apply_voice_all_btn)
-        voice_layout.addLayout(apply_voice_layout)
+        apply_layout.addWidget(self._apply_voice_all_btn)
         
-        right_layout.addWidget(voice_group)
+        voice_page_layout.addLayout(apply_layout)
+        voice_page_layout.addStretch()
         
-        # Voice settings (separate group to avoid nesting)
-        self._voice_settings = VoiceSettingsWidget()
-        self._voice_settings.settings_changed.connect(self._on_voice_settings_changed)
-        right_layout.addWidget(self._voice_settings)
+        self._toolbox.addItem(voice_page, QIcon(), "🗣 " + tr("voice_settings"))
         
-        # Processing options
-        proc_group = QGroupBox(tr("processing"))
-        proc_layout = QVBoxLayout(proc_group)
+        # 2. Processing Options Group
+        proc_page = QWidget()
+        proc_layout = QVBoxLayout(proc_page)
+        proc_layout.setContentsMargins(10, 10, 10, 10)
         
-        threads_layout = QHBoxLayout()
+        # Threading
+        threads_group = QGroupBox(tr("threads"))
+        threads_layout = QHBoxLayout(threads_group)
         threads_layout.addWidget(QLabel(tr("threads") + ":"))
         self._threads_spin = QSpinBox()
         self._threads_spin.setRange(1, 50)
         self._threads_spin.setValue(self._project.settings.thread_count)
+        self._threads_spin.setToolTip("Number of concurrent requests")
         threads_layout.addWidget(self._threads_spin)
-        proc_layout.addLayout(threads_layout)
+        proc_layout.addWidget(threads_group)
         
-        self._loop_check = QCheckBox(tr("loop_mode"))
+        # Loop Mode
+        loop_group = QGroupBox(tr("loop_mode"))
+        loop_layout = QVBoxLayout(loop_group)
+        
+        self._loop_check = QCheckBox("Enable " + tr("loop_mode"))
         self._loop_check.setChecked(self._project.settings.loop_enabled)
-        proc_layout.addWidget(self._loop_check)
+        loop_layout.addWidget(self._loop_check)
         
-        loop_layout = QHBoxLayout()
-        loop_layout.addWidget(QLabel(tr("loop_count_label") + ":"))
+        loop_params_layout = QHBoxLayout()
+        loop_params_layout.addWidget(QLabel(tr("loop_count_label") + ":"))
         self._loop_count_spin = QSpinBox()
         self._loop_count_spin.setRange(0, 1000)
         self._loop_count_spin.setValue(self._project.settings.loop_count)
-        loop_layout.addWidget(self._loop_count_spin)
-        proc_layout.addLayout(loop_layout)
+        loop_params_layout.addWidget(self._loop_count_spin)
+        loop_layout.addLayout(loop_params_layout)
         
-        right_layout.addWidget(proc_group)
+        proc_layout.addWidget(loop_group)
+        proc_layout.addStretch()
         
-        # Thread status
+        self._toolbox.addItem(proc_page, QIcon(), "⚙ " + tr("processing"))
+        
+        # 3. Status & Logs
+        status_page = QWidget()
+        status_layout = QVBoxLayout(status_page)
+        status_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Thread Status
         self._thread_status = ThreadStatusWidget(max_threads=10)
-        right_layout.addWidget(self._thread_status)
+        status_layout.addWidget(self._thread_status)
         
-        # Log
-        log_group = QGroupBox(tr("log"))
-        log_layout = QVBoxLayout(log_group)
+        # Logs
+        log_label_layout = QHBoxLayout()
+        log_label_layout.addWidget(QLabel("Activity Log:"))
+        log_label_layout.addStretch()
+        
+        export_log_btn = QPushButton("💾 " + tr("export_log"))
+        export_log_btn.clicked.connect(self._on_export_log)
+        export_log_btn.setFixedHeight(24)
+        log_label_layout.addWidget(export_log_btn)
+        
+        status_layout.addLayout(log_label_layout)
         
         self._log_text = QTextEdit()
         self._log_text.setReadOnly(True)
-        self._log_text.setMaximumHeight(200)
-        log_layout.addWidget(self._log_text)
+        self._log_text.setFontFamily("Consolas")
+        status_layout.addWidget(self._log_text)
         
-        # Log export button
-        export_log_btn = QPushButton(tr("export_log"))
-        export_log_btn.clicked.connect(self._on_export_log)
-        log_layout.addWidget(export_log_btn)
+        self._toolbox.addItem(status_page, QIcon(), "📊 " + tr("log"))
         
-        right_layout.addWidget(log_group)
+        right_layout.addWidget(self._toolbox)
+        splitter.addWidget(right_panel)
         
-        right_layout.addStretch()
-        
-        right_scroll.setWidget(right_panel)
-        splitter.addWidget(right_scroll)
-        splitter.setSizes([800, 370])
+        # Set initial splitter sizes (ratio)
+        splitter.setSizes([900, 380])
+        splitter.setCollapsible(0, False) # Left panel not collapsible
+        splitter.setCollapsible(1, True)  # Right panel collapsible
         
         tts_layout.addWidget(splitter)
         
@@ -596,6 +662,86 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 self._log(f"Auto-save failed: {e}")
     
+    def _on_command_change(self, can_undo: bool, can_redo: bool):
+        """Handle command stack change"""
+        self._undo_action.setEnabled(can_undo)
+        self._redo_action.setEnabled(can_redo)
+    
+    def _on_undo(self):
+        """Undo last action"""
+        if self._command_manager.undo():
+            self._table.load_lines(self._project.lines)
+            self._log("Undid last action")
+    
+    def _on_redo(self):
+        """Redo last action"""
+        if self._command_manager.redo():
+            self._table.load_lines(self._project.lines)
+            self._log("Redid last action")
+    
+    def _on_bulk_voice_assignment(self):
+        """Open bulk voice assignment dialog"""
+        if not self._project.lines:
+            QMessageBox.warning(self, "Warning", "No lines to assign voices to")
+            return
+        
+        dialog = VoiceAssignmentDialog(
+            self._project.lines,
+            list(self._voices.values()),
+            self._config.voice_library,
+            self
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._table.load_lines(self._project.lines)
+            self._log("Applied bulk voice assignment")
+
+    def _on_presets(self):
+        """Open preset manager"""
+        dialog = PresetManagerDialog(self._preset_manager, self)
+        dialog.preset_applied.connect(self._on_preset_applied)
+        dialog.exec()
+    
+    def _on_preset_applied(self, preset_id: str):
+        """Handle preset application"""
+        preset = self._preset_manager.get_preset(preset_id)
+        if not preset:
+            return
+        
+        # Apply voice settings
+        if preset.voice_settings:
+            # Note: Presets might need to store model/voice ID too
+            # For now, we apply settings to currently selected voice
+            voice_id = self._voice_combo.currentData()
+            if voice_id and voice_id in self._voices:
+                voice = self._voices[voice_id]
+                voice.settings = preset.voice_settings
+                self._voice_settings.set_settings(preset.voice_settings)
+                self._log(f"Applied preset '{preset.name}' to current voice")
+    
+    def _on_audio_processing(self):
+        """Open audio processing dialog"""
+        dialog = AudioProcessingDialog(self._audio_settings, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._audio_settings = dialog.get_settings()
+            self._log("Audio processing settings updated")
+    
+    def _on_analytics(self):
+        """Open analytics dialog"""
+        dialog = AnalyticsDialog(self._analytics, self)
+        dialog.exec()
+    
+    def _on_transcribe_files(self):
+        """Switch to transcribe tab"""
+        self._tab_widget.setCurrentWidget(self._transcribe_tab)
+        # Optionally prompt to import files if empty
+        if self._transcribe_tab.is_queue_empty():
+             self._transcribe_tab._on_add_files()
+
+    def _on_view_logs(self):
+        """Show log dialog/tab"""
+        # Switch to status page in toolbox
+        self._toolbox.setCurrentIndex(2)
+
     def _log(self, message: str):
         """Add message to log"""
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -652,6 +798,18 @@ class MainWindow(QMainWindow):
         total = self._config.get_total_credits()
         self._credit_widget.update_credits(total)
     
+    def _update_empty_state(self):
+        """Update UI based on whether there are lines"""
+        has_lines = len(self._project.lines) > 0
+        
+        # Show/hide empty state vs table
+        self._empty_state.setVisible(not has_lines)
+        self._table.setVisible(has_lines)
+        self._filter_widget.setVisible(has_lines)
+        
+        # Switch drop zone to compact mode when lines exist
+        self._drop_zone.set_compact(has_lines)
+    
     # File operations
     def _on_files_dropped(self, files: list):
         """Handle dropped files"""
@@ -696,6 +854,7 @@ class MainWindow(QMainWindow):
             self._project.lines.extend(all_lines)
             
             self._table.load_lines(self._project.lines)
+            self._update_empty_state()
             self._log(f"Imported {len(all_lines)} lines")
         
         if errors:
@@ -724,6 +883,7 @@ class MainWindow(QMainWindow):
         self._project = Project()
         self._project.settings.output_folder = self._config.default_output_folder
         self._table.load_lines([])
+        self._update_empty_state()
         self._progress.reset()
         self._log("New project created")
     
@@ -736,6 +896,7 @@ class MainWindow(QMainWindow):
             try:
                 self._project = Project.load(file_path)
                 self._table.load_lines(self._project.lines)
+                self._update_empty_state()
                 self._config.add_recent_project(file_path)
                 self._log(f"Opened project: {file_path}")
             except Exception as e:
@@ -792,6 +953,7 @@ class MainWindow(QMainWindow):
             if reply == QMessageBox.StandardButton.Yes:
                 self._project.lines.clear()
                 self._table.load_lines([])
+                self._update_empty_state()
                 self._log("All lines cleared")
     
     def _on_remove_completed(self):
@@ -800,6 +962,7 @@ class MainWindow(QMainWindow):
         for i, line in enumerate(self._project.lines):
             line.index = i
         self._table.load_lines(self._project.lines)
+        self._update_empty_state()
         self._log("Removed completed lines")
     
     def _on_retry_failed(self):
@@ -811,70 +974,102 @@ class MainWindow(QMainWindow):
         self._table.load_lines(self._project.lines)
         self._log("Reset failed lines for retry")
     
-    def _on_lines_reordered(self):
-        """Handle lines reordering from table drag"""
-        self._project.lines = self._table.get_lines()
+    def _on_lines_reordered(self, line_ids: list):
+        """Handle lines reordering from table drag - receives list of line IDs in new order"""
+        # Reorder _project.lines based on line_ids order
+        id_to_line = {line.id: line for line in self._project.lines}
+        reordered = []
+        for line_id in line_ids:
+            if line_id in id_to_line:
+                reordered.append(id_to_line[line_id])
+        
+        # Add any lines not in the reordered list (shouldn't happen but be safe)
+        existing_ids = set(line_ids)
+        for line in self._project.lines:
+            if line.id not in existing_ids:
+                reordered.append(line)
+        
+        # Update indices
+        for i, line in enumerate(reordered):
+            line.index = i
+        
+        self._project.lines = reordered
         self._log("Lines reordered")
     
-    def _on_text_edited(self, row: int, new_text: str):
+    def _on_text_edited(self, line_id: str, new_text: str):
         """Handle text edit from table - update project and use edited text for TTS"""
-        if row < len(self._project.lines):
-            self._project.lines[row].text = new_text
-            self._log(f"Line {row + 1} text updated")
+        for line in self._project.lines:
+            if line.id == line_id:
+                line.text = new_text
+                self._log(f"Line {line.index + 1} text updated")
+                break
     
-    def _on_play_audio(self, row: int):
+    def _on_play_audio(self, line_id: str):
         """Play audio for a completed line"""
-        if row < len(self._project.lines):
-            line = self._project.lines[row]
-            if line.output_path and os.path.exists(line.output_path):
-                self._audio_player.setSource(QUrl.fromLocalFile(line.output_path))
-                self._audio_player.play()
-                self._log(f"Playing audio for line {row + 1}")
-            else:
-                QMessageBox.warning(self, "Warning", "Audio file not found")
+        for line in self._project.lines:
+            if line.id == line_id:
+                if line.output_path and os.path.exists(line.output_path):
+                    self._audio_player.setSource(QUrl.fromLocalFile(line.output_path))
+                    self._audio_player.play()
+                    self._log(f"Playing audio for line {line.index + 1}")
+                else:
+                    QMessageBox.warning(self, "Warning", "Audio file not found")
+                break
     
-    def _on_retry_lines(self, rows: list):
-        """Retry failed lines"""
-        for row in rows:
-            if row < len(self._project.lines):
-                self._project.lines[row].status = LineStatus.PENDING
-                self._project.lines[row].error_message = None
+    def _on_retry_lines(self, line_ids: list):
+        """Retry failed lines - receives list of line IDs"""
+        count = 0
+        for line in self._project.lines:
+            if line.id in line_ids:
+                line.status = LineStatus.PENDING
+                line.error_message = None
+                count += 1
         self._table.load_lines(self._project.lines)
-        self._log(f"Reset {len(rows)} lines for retry")
+        self._log(f"Reset {count} lines for retry")
     
-    def _on_delete_lines(self, rows: list):
-        """Delete selected lines"""
-        if not rows:
+    def _on_delete_lines(self, line_ids: list):
+        """Delete selected lines - receives list of line IDs"""
+        if not line_ids:
             return
         
         reply = QMessageBox.question(
             self, "Confirm Delete",
-            f"Delete {len(rows)} selected lines?",
+            f"Delete {len(line_ids)} selected lines?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if reply == QMessageBox.StandardButton.Yes:
-            # Delete in reverse order to maintain indices
-            for row in sorted(rows, reverse=True):
-                if row < len(self._project.lines):
-                    del self._project.lines[row]
+            # Convert to set for O(1) lookup
+            ids_to_delete = set(line_ids)
+            
+            # Filter out lines to delete
+            self._project.lines = [line for line in self._project.lines if line.id not in ids_to_delete]
             
             # Re-index remaining lines
             for i, line in enumerate(self._project.lines):
                 line.index = i
             
             self._table.load_lines(self._project.lines)
-            self._log(f"Deleted {len(rows)} lines")
+            self._update_empty_state()
+            self._log(f"Deleted {len(line_ids)} lines")
     
     def _on_filter_changed(self, text: str, status: str):
         """Handle filter change"""
         self._table.set_filter(text, status if status else None)
     
-    def _on_split_line(self, row: int):
-        """Split a line at cursor position or by delimiter"""
-        if row >= len(self._project.lines):
+    def _on_split_line(self, line_id: str):
+        """Split a line at cursor position or by delimiter - receives line ID"""
+        # Find line by ID
+        line = None
+        line_index = -1
+        for i, ln in enumerate(self._project.lines):
+            if ln.id == line_id:
+                line = ln
+                line_index = i
+                break
+        
+        if not line:
             return
         
-        line = self._project.lines[row]
         text = line.text
         
         # Try to split by common delimiters
@@ -903,53 +1098,57 @@ class MainWindow(QMainWindow):
         # Create new line
         from core.models import TextLine
         new_line = TextLine(
-            index=row + 1,
+            index=line_index + 1,
             text=text2,
             voice_id=line.voice_id,
             voice_name=line.voice_name,
             detected_language=line.detected_language
         )
         
-        # Insert new line
-        self._project.lines.insert(row + 1, new_line)
+        # Insert new line after the original
+        self._project.lines.insert(line_index + 1, new_line)
         
         # Re-index all lines
         for i, ln in enumerate(self._project.lines):
             ln.index = i
         
         self._table.load_lines(self._project.lines)
-        self._log(f"Split line {row + 1} into two lines")
+        self._log(f"Split line {line_index + 1} into two lines")
     
-    def _on_merge_lines(self, rows: list):
-        """Merge multiple lines into one"""
-        if len(rows) < 2:
+    def _on_merge_lines(self, line_ids: list):
+        """Merge multiple lines into one - receives list of line IDs"""
+        if len(line_ids) < 2:
             return
         
-        rows = sorted(rows)
+        # Get lines by ID, preserving order by their index
+        lines_to_merge = []
+        for line in self._project.lines:
+            if line.id in line_ids:
+                lines_to_merge.append(line)
+        
+        if len(lines_to_merge) < 2:
+            return
+        
+        # Sort by index to maintain order
+        lines_to_merge.sort(key=lambda x: x.index)
         
         # Combine text from all selected lines
-        texts = []
-        for row in rows:
-            if row < len(self._project.lines):
-                texts.append(self._project.lines[row].text)
-        
-        merged_text = " ".join(texts)
+        merged_text = " ".join(line.text for line in lines_to_merge)
         
         # Keep first line, update with merged text
-        first_row = rows[0]
-        self._project.lines[first_row].text = merged_text
+        first_line = lines_to_merge[0]
+        first_line.text = merged_text
         
-        # Delete other lines (in reverse order)
-        for row in sorted(rows[1:], reverse=True):
-            if row < len(self._project.lines):
-                del self._project.lines[row]
+        # Delete other lines
+        ids_to_delete = set(line.id for line in lines_to_merge[1:])
+        self._project.lines = [line for line in self._project.lines if line.id not in ids_to_delete]
         
         # Re-index
         for i, line in enumerate(self._project.lines):
             line.index = i
         
         self._table.load_lines(self._project.lines)
-        self._log(f"Merged {len(rows)} lines into line {first_row + 1}")
+        self._log(f"Merged {len(line_ids)} lines into line {first_line.index + 1}")
     
     def _on_export_log(self):
         """Export log to file"""
@@ -1066,18 +1265,22 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "No voice selected")
             return
         
-        selected_rows = self._table.get_selected_rows()
-        if not selected_rows:
+        selected_line_ids = self._table.get_selected_line_ids()
+        if not selected_line_ids:
             QMessageBox.warning(self, "Warning", "No lines selected")
             return
         
-        for row in selected_rows:
-            if row < len(self._project.lines):
-                self._project.lines[row].voice_id = voice_id
-                self._project.lines[row].voice_name = voice_name
+        # Convert to set for O(1) lookup
+        ids_set = set(selected_line_ids)
+        count = 0
+        for line in self._project.lines:
+            if line.id in ids_set:
+                line.voice_id = voice_id
+                line.voice_name = voice_name
+                count += 1
         
         self._table.load_lines(self._project.lines)
-        self._log(f"Applied voice '{voice_name}' to {len(selected_rows)} lines")
+        self._log(f"Applied voice '{voice_name}' to {count} lines")
     
     def _on_apply_voice_to_all(self):
         """Apply current voice to all lines"""
@@ -1468,256 +1671,71 @@ class MainWindow(QMainWindow):
 
         self._update_download_in_progress = True
 
+        def _progress_callback(downloaded, total, percent):
+            self.update_download_progress.emit(downloaded, total, percent)
+
         def _dl_worker():
-            ok, path, msg = self._update_checker.download_update(update)
+            ok, path, msg = self._update_checker.download_update(update, progress_callback=_progress_callback)
             self.update_download_result.emit(ok, update, path, msg)
+
+        if show_result:
+            self._update_progress_dialog = QProgressDialog(
+                f"Downloading update v{update.version}...",
+                None,
+                0,
+                100,
+                self
+            )
+            self._update_progress_dialog.setWindowTitle(tr("check_updates"))
+            self._update_progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+            self._update_progress_dialog.setMinimumDuration(0)
+            self._update_progress_dialog.setValue(0)
+            self._update_progress_dialog.show()
 
         threading.Thread(target=_dl_worker, daemon=True).start()
 
-        if show_result:
-            QMessageBox.information(
-                self,
-                tr("check_updates"),
-                f"Found update v{update.version}. Downloading in background...",
+    def _on_update_download_progress(self, downloaded: int, total: int, percent: int):
+        """Handle download progress update"""
+        if self._update_progress_dialog:
+            self._update_progress_dialog.setValue(percent)
+            size_mb = total / (1024 * 1024)
+            downloaded_mb = downloaded / (1024 * 1024)
+            self._update_progress_dialog.setLabelText(
+                f"Downloading update... {downloaded_mb:.1f} / {size_mb:.1f} MB ({percent}%)"
             )
 
     def _on_update_download_result(self, success: bool, info_obj: object, installer_obj: object, message: str):
         self._update_download_in_progress = False
 
+        if self._update_progress_dialog:
+            self._update_progress_dialog.close()
+            self._update_progress_dialog = None
+
         if not success or not isinstance(info_obj, UpdateInfo) or not isinstance(installer_obj, Path):
             if self._update_user_initiated:
-                QMessageBox.warning(self, tr("check_updates"), message)
+                QMessageBox.warning(self, tr("check_updates"), f"Download failed: {message}")
             return
-
-        update = info_obj
-        installer_path = installer_obj
-
-        self._pending_update_info = update
-        self._pending_update_installer = installer_path
-
-        if self._tray_icon:
-            try:
-                self._tray_icon.showMessage(
-                    "2TTS",
-                    f"Update v{update.version} downloaded. It will install when you exit.",
-                )
-            except Exception:
-                pass
-
-        if self._update_user_initiated:
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle(tr("check_updates"))
-            msg_box.setIcon(QMessageBox.Icon.Information)
-            msg_box.setText(
-                f"Đã tải xong bản cập nhật v{update.version}.\n\n"
-                "Cài đặt ngay (silent) hay để tự cài khi thoát ứng dụng?"
-            )
-            btn_now = msg_box.addButton("Update", QMessageBox.ButtonRole.AcceptRole)
-            msg_box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
-            msg_box.exec()
-            if msg_box.clickedButton() == btn_now:
-                self._install_update_now()
-
-    def _install_update_now(self):
-        if self._update_install_scheduled:
-            return
-        if not self._pending_update_installer or not self._pending_update_installer.exists():
-            QMessageBox.warning(self, tr("check_updates"), "No downloaded update found")
-            return
-
-        ok, msg = self._update_checker.schedule_install(
-            self._pending_update_installer,
-            relaunch_path=sys.executable,
-            wait_pid=os.getpid(),
+        
+        # Download successful
+        self._pending_update_info = info_obj
+        self._pending_update_installer = installer_obj
+        
+        reply = QMessageBox.question(
+            self,
+            tr("check_updates"),
+            f"Update v{info_obj.version} is ready to install.\n\nInstall now? (App will close)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        if not ok:
-            QMessageBox.critical(self, tr("check_updates"), msg)
-            return
-
-        self._update_install_scheduled = True
-        self._update_checker.clear_ready_update(delete_file=False)
-        self.close()
-    
-    # New feature handlers
-    def _on_undo(self):
-        """Undo last action"""
-        desc = self._command_manager.undo()
-        if desc:
-            self._table.load_lines(self._project.lines)
-            self._log(f"Undone: {desc}")
-    
-    def _on_redo(self):
-        """Redo last undone action"""
-        desc = self._command_manager.redo()
-        if desc:
-            self._table.load_lines(self._project.lines)
-            self._log(f"Redone: {desc}")
-    
-    def _on_command_change(self):
-        """Update undo/redo menu items"""
-        self._undo_action.setEnabled(self._command_manager.can_undo())
-        self._redo_action.setEnabled(self._command_manager.can_redo())
         
-        undo_desc = self._command_manager.get_undo_description()
-        redo_desc = self._command_manager.get_redo_description()
-        
-        self._undo_action.setText(f"Undo {undo_desc}" if undo_desc else "Undo")
-        self._redo_action.setText(f"Redo {redo_desc}" if redo_desc else "Redo")
+        if reply == QMessageBox.StandardButton.Yes:
+            self._run_installer(installer_obj)
     
-    def _on_bulk_voice_assignment(self):
-        """Open bulk voice assignment dialog"""
-        if not self._project.lines:
-            QMessageBox.warning(self, "Warning", "No lines to assign")
-            return
-        
-        dialog = VoiceAssignmentDialog(
-            self._project.lines,
-            list(self._voices.values()),
-            self
-        )
-        dialog.assignments_changed.connect(self._apply_voice_assignments)
-        dialog.exec()
-    
-    def _apply_voice_assignments(self, assignments: dict):
-        """Apply voice assignments from dialog"""
-        self._voice_matcher.assign_voices(
-            self._project.lines,
-            self._voice_combo.currentData(),
-            self._voice_combo.currentText()
-        )
-        self._table.load_lines(self._project.lines)
-        self._log(f"Applied voice assignments to {len(self._project.lines)} lines")
-    
-    def _on_presets(self):
-        """Open preset manager dialog"""
-        dialog = PresetManagerDialog(list(self._voices.values()), self)
-        dialog.preset_selected.connect(self._apply_preset)
-        dialog.exec()
-    
-    def _apply_preset(self, preset):
-        """Apply a voice preset"""
-        index = self._voice_combo.findData(preset.voice_id)
-        if index >= 0:
-            self._voice_combo.setCurrentIndex(index)
-        self._voice_settings.set_settings(preset.settings)
-        self._log(f"Applied preset: {preset.name}")
-    
-    def _on_audio_processing(self):
-        """Open audio processing settings dialog"""
-        dialog = AudioProcessingDialog(self._audio_settings, self)
-        dialog.settings_changed.connect(self._on_audio_settings_changed)
-        dialog.exec()
-    
-    def _on_audio_settings_changed(self, settings):
-        """Handle audio processing settings change"""
-        self._audio_settings = settings
-        self._log("Audio processing settings updated")
-    
-
-    
-    def _on_analytics(self):
-        """Open analytics dialog"""
-        dialog = AnalyticsDialog(self)
-        dialog.exec()
-    
-    def _on_transcribe_files(self):
-        """Switch to transcribe tab and optionally import files"""
-        # Switch to transcribe tab
-        self._tab_widget.setCurrentWidget(self._transcribe_tab)
-        
-        # Open file dialog
-        from services.transcription import SUPPORTED_FORMATS
-        formats = " ".join(f"*{ext}" for ext in SUPPORTED_FORMATS)
-        files, _ = QFileDialog.getOpenFileNames(
-            self, "Select Audio/Video Files", "",
-            f"Media Files ({formats});;All Files (*.*)"
-        )
-        if files:
-            self._transcribe_tab._on_files_dropped(files)
-    
-    def _on_view_logs(self):
-        """View application logs"""
-        log_content = self._logger.get_recent_logs(500)
-        
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Application Logs")
-        dialog.setMinimumSize(700, 500)
-        
-        layout = QVBoxLayout(dialog)
-        
-        text = QTextEdit()
-        text.setPlainText(log_content)
-        text.setReadOnly(True)
-        layout.addWidget(text)
-        
-        btn_layout = QHBoxLayout()
-        
-        open_folder_btn = QPushButton("Open Log Folder")
-        open_folder_btn.clicked.connect(lambda: os.startfile(str(self._logger.log_dir)))
-        btn_layout.addWidget(open_folder_btn)
-        
-        btn_layout.addStretch()
-        
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(dialog.accept)
-        btn_layout.addWidget(close_btn)
-        
-        layout.addLayout(btn_layout)
-        dialog.exec()
-    
-    def closeEvent(self, event):
-        """Handle window close"""
-        if self._engine and self._engine.is_running:
-            reply = QMessageBox.question(
-                self, "Confirm Exit",
-                "Processing is in progress. Stop and exit?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.No:
-                event.ignore()
-                return
-            self._engine.stop()
-        
-        # Auto-save if there are unsaved changes
-        if self._project.lines and not self._project.file_path:
-            reply = QMessageBox.question(
-                self, "Save Project",
-                "Save project before exiting?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self._on_save_project_as()
-            elif reply == QMessageBox.StandardButton.Cancel:
-                event.ignore()
-                return
-        
-        # End analytics session
-        if (
-            self._pending_update_installer
-            and not self._update_install_scheduled
-            and self._pending_update_installer.exists()
-        ):
-            ok, msg = self._update_checker.schedule_install(
-                self._pending_update_installer,
-                relaunch_path=sys.executable,
-                wait_pid=os.getpid(),
-            )
-            if ok:
-                self._update_install_scheduled = True
-                self._update_checker.clear_ready_update(delete_file=False)
-            else:
-                self._logger.warning(f"Update install not scheduled: {msg}")
-
-        self._analytics.end_session()
-        self._logger.info("Application closed")
-        
-        event.accept()
-
-
-class LineUpdateEvent(QEvent):
-    """Custom event for line updates from worker thread"""
-    EVENT_TYPE = QEvent.Type(QEvent.registerEventType())
-    
-    def __init__(self, line: TextLine):
-        super().__init__(self.EVENT_TYPE)
-        self.line = line
+    def _run_installer(self, installer_path: Path):
+        """Run the installer and exit"""
+        import subprocess
+        try:
+            # Run installer detached
+            subprocess.Popen([str(installer_path), "/SILENT"])
+            QApplication.quit()
+        except Exception as e:
+            QMessageBox.critical(self, "Update Error", f"Failed to run installer: {e}")

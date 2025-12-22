@@ -380,6 +380,27 @@ TRANSLATIONS_VI = {
     "minutes": "phút",
     "hour": "giờ",
     "hours": "giờ",
+    
+    # Empty state
+    "empty_state_title": "Chưa có dòng nào",
+    "empty_state_desc": "Nhập tệp văn bản để bắt đầu chuyển đổi TTS",
+    "empty_state_tip": "💡 Mẹo: Kéo thả tệp SRT, TXT hoặc DOCX vào ứng dụng",
+    
+    # Context menu
+    "play_audio": "Phát âm thanh",
+    "retry_failed_count": "Thử lại thất bại ({count})",
+    "reset_to_pending": "Đặt về chờ xử lý",
+    "move_up": "Di chuyển lên",
+    "move_down": "Di chuyển xuống",
+    "split_line": "Tách dòng",
+    "merge_lines": "Gộp dòng ({count})",
+    "delete_count": "Xóa ({count})",
+    
+    # Status translations
+    "status_pending": "Chờ xử lý",
+    "status_processing": "Đang xử lý",
+    "status_done": "Hoàn thành",
+    "status_error": "Lỗi",
 }
 
 # English translations (default)
@@ -757,6 +778,27 @@ TRANSLATIONS_EN = {
     "minutes": "minutes",
     "hour": "hour",
     "hours": "hours",
+    
+    # Empty state
+    "empty_state_title": "No lines yet",
+    "empty_state_desc": "Import text files to get started with TTS conversion",
+    "empty_state_tip": "💡 Tip: Drag & drop SRT, TXT, or DOCX files into the app",
+    
+    # Context menu
+    "play_audio": "Play Audio",
+    "retry_failed_count": "Retry Failed ({count})",
+    "reset_to_pending": "Reset to Pending",
+    "move_up": "Move Up",
+    "move_down": "Move Down",
+    "split_line": "Split Line",
+    "merge_lines": "Merge Lines ({count})",
+    "delete_count": "Delete ({count})",
+    
+    # Status translations
+    "status_pending": "Pending",
+    "status_processing": "Processing",
+    "status_done": "Done",
+    "status_error": "Error",
 }
 
 TRANSLATIONS = {

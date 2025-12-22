@@ -1,6 +1,6 @@
 #define AppName "2TTS"
-#define AppVersion "1.0.0"
-#define AppVersionInfo "1.0.0.0"
+#define AppVersion "1.0.7"
+#define AppVersionInfo "1.0.7.0"
 #define AppPublisher "2TTS"
 #define AppExeName "2TTS.exe"
 
