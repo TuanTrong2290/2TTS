@@ -1,0 +1,42 @@
+# Factory AI
+/.factory
+/openspec
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+.eggs/
+*.egg
+
+# Build artifacts
+/app/build/
+/app/dist/
+*.spec.bak
+
+# User settings (local)
+/app/2tts_settings.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
