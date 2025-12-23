@@ -22,7 +22,7 @@ except Exception:
     _HAS_PACKAGING = False
 
 
-APP_VERSION = "1.0.7"
+APP_VERSION = "1.0.8"
 
 GITHUB_REPO = "TuanTrong2290/2TTS"
 UPDATE_MANIFEST_URL = f"https://github.com/{GITHUB_REPO}/releases/latest/download/latest.json"

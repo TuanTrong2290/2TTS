@@ -1,0 +1,5 @@
+# Backend-specific requirements (inherits from app/requirements.txt)
+# JSON-RPC server dependencies are handled by stdlib
+
+# The backend reuses existing app services
+# See: app/requirements.txt
