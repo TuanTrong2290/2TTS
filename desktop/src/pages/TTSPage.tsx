@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { ipcClient } from '../lib/ipc';
 import { getPlatformAPI } from '../lib/platform';
@@ -6,6 +6,8 @@ import DropZone from '../components/DropZone';
 import LineTable from '../components/LineTable';
 import ProcessingControls from '../components/ProcessingControls';
 import VoiceSettings from '../components/VoiceSettings';
+import VoiceLibraryDialog from '../components/VoiceLibraryDialog';
+import { detectLanguage, DetectedLanguage } from '../lib/languageDetect';
 
 export default function TTSPage() {
   console.log('[TTSPage] Rendering...');
@@ -52,10 +54,22 @@ export default function TTSPage() {
     modelId: 'eleven_v3',
   });
   const processingRef = useRef(false);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [showLogs, setShowLogs] = useState(true);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  const [showVoiceLibrary, setShowVoiceLibrary] = useState(false);
+  const [isRefreshingCredits, setIsRefreshingCredits] = useState(false);
+
+  const addLog = useCallback((msg: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs(prev => [...prev.slice(-50), `[${timestamp}] ${msg}`]);
+    setTimeout(() => logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+  }, []);
 
   useEffect(() => {
     loadVoices();
     loadConfig();
+    loadCredits();
 
     const unsubCredits = ipcClient.onCreditsUpdate(({ total }) => setTotalCredits(total));
 
@@ -63,6 +77,18 @@ export default function TTSPage() {
       unsubCredits();
     };
   }, []);
+
+  async function loadCredits() {
+    setIsRefreshingCredits(true);
+    try {
+      const credits = await ipcClient.getCredits();
+      setTotalCredits(credits);
+    } catch (err) {
+      console.error('Failed to load credits:', err);
+    } finally {
+      setIsRefreshingCredits(false);
+    }
+  }
 
   async function loadVoices() {
     setIsLoadingVoices(true);
@@ -134,6 +160,16 @@ export default function TTSPage() {
     }
   };
 
+  const handleOpenOutputFolder = async () => {
+    if (!outputFolder) return;
+    try {
+      const { open } = await import('@tauri-apps/plugin-shell');
+      await open(outputFolder);
+    } catch (err) {
+      console.error('Failed to open output folder:', err);
+    }
+  };
+
   const handleVoiceChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const voiceId = e.target.value;
     const voice = voices.find((v) => v.voice_id === voiceId);
@@ -155,31 +191,46 @@ export default function TTSPage() {
   };
 
   const handleStartProcessing = async () => {
-    if (lines.length === 0 || !outputFolder) return;
+    const pendingCount = lines.filter((l) => l.status === 'pending').length;
+    addLog(`Start clicked - Lines: ${lines.length}, Output: ${outputFolder || '(not set)'}, Voice: ${defaultVoiceId || '(not set)'}, Pending: ${pendingCount}`);
+
+    if (lines.length === 0 || !outputFolder) {
+      addLog('ERROR: Aborted - no lines or output folder');
+      return;
+    }
 
     setProcessing(true);
     processingRef.current = true;
     resetProcessingStats();
 
     const pendingLines = lines.filter((l) => l.status === 'pending');
+    addLog(`Processing ${pendingLines.length} pending lines...`);
+    
     let completed = 0;
     let failed = 0;
     const startTime = Date.now();
 
     for (const line of pendingLines) {
-      if (!processingRef.current) break; // Check if stopped
+      if (!processingRef.current) {
+        addLog('Stopped by user');
+        break;
+      }
 
       if (!line.voice_id) {
+        addLog(`Line ${line.index + 1}: ERROR - No voice selected`);
         updateLineStatus(line.id, 'error', 'No voice selected');
         failed++;
         continue;
       }
 
+      addLog(`Line ${line.index + 1}: Processing "${line.text.substring(0, 30)}..."`);
       updateLineStatus(line.id, 'processing');
       updateProcessingStats({ processing: 1 });
 
       try {
         const outputPath = `${outputFolder}\\${String(line.index + 1).padStart(4, '0')}_${Date.now()}.mp3`;
+        addLog(`Line ${line.index + 1}: Calling TTS API...`);
+        
         const result = await ipcClient.startTTSJob({
           text: line.text,
           voice_id: line.voice_id,
@@ -193,6 +244,7 @@ export default function TTSPage() {
           },
         });
 
+        addLog(`Line ${line.index + 1}: SUCCESS - ${result.duration_ms}ms (lang: ${result.language_code || 'auto'})`);
         updateLine(line.id, {
           status: 'done',
           output_path: result.output_path,
@@ -200,7 +252,9 @@ export default function TTSPage() {
         });
         completed++;
       } catch (err) {
-        updateLineStatus(line.id, 'error', err instanceof Error ? err.message : 'Unknown error');
+        const errMsg = err instanceof Error ? err.message : 'Unknown error';
+        addLog(`Line ${line.index + 1}: ERROR - ${errMsg}`);
+        updateLineStatus(line.id, 'error', errMsg);
         failed++;
       }
 
@@ -217,6 +271,7 @@ export default function TTSPage() {
       });
     }
 
+    addLog(`DONE - Completed: ${completed}, Failed: ${failed}, Total: ${pendingLines.length}`);
     setProcessing(false);
     processingRef.current = false;
   };
@@ -306,6 +361,18 @@ export default function TTSPage() {
   const pendingCount = lines.filter((l) => l.status === 'pending').length;
   const completedCount = lines.filter((l) => l.status === 'done').length;
 
+  // Detect language from all lines text
+  const detectedLanguage = useMemo<DetectedLanguage | null>(() => {
+    if (lines.length === 0) return null;
+    // Combine first few lines for detection (limit to avoid performance issues)
+    const sampleText = lines.slice(0, 10).map(l => l.text).join(' ');
+    if (!sampleText.trim()) return null;
+    return detectLanguage(sampleText);
+  }, [lines]);
+
+  // Check disabled state
+  const isStartDisabled = !outputFolder || !defaultVoiceId || pendingCount === 0;
+
   return (
     <div className="h-full flex flex-col gap-4 p-4 overflow-hidden">
       {/* Header */}
@@ -317,8 +384,18 @@ export default function TTSPage() {
           </p>
         </div>
         <div className="flex items-center gap-4">
-          <div className="text-sm text-surface-400">
+          <div className="flex items-center gap-1.5 text-sm text-surface-400">
             Credits: <span className="text-primary-400 font-medium">{totalCredits.toLocaleString()}</span>
+            <button
+              onClick={loadCredits}
+              disabled={isRefreshingCredits}
+              className="p-1 text-surface-500 hover:text-surface-300 transition-colors disabled:opacity-50"
+              title="Refresh credits"
+            >
+              <svg className={`w-3.5 h-3.5 ${isRefreshingCredits ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
           </div>
         </div>
       </div>
@@ -351,6 +428,15 @@ export default function TTSPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
+          <button
+            onClick={() => setShowVoiceLibrary(true)}
+            className="p-1.5 text-surface-400 hover:text-surface-200 transition-colors"
+            title="Browse Voice Library"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+          </button>
           {lines.length > 0 && (
             <button
               onClick={handleApplyVoiceToAll}
@@ -379,6 +465,16 @@ export default function TTSPage() {
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+          </button>
+          <button
+            onClick={handleOpenOutputFolder}
+            disabled={!outputFolder}
+            className="p-1.5 text-surface-400 hover:text-surface-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Open output folder"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
           </button>
         </div>
@@ -414,6 +510,7 @@ export default function TTSPage() {
             speed={voiceSettings.speed}
             useSpeakerBoost={voiceSettings.useSpeakerBoost}
             modelId={voiceSettings.modelId}
+            detectedLanguage={detectedLanguage}
             onChange={setVoiceSettings}
           />
         </div>
@@ -471,6 +568,59 @@ export default function TTSPage() {
           </div>
         </div>
       )}
+
+      {/* Debug Log Panel */}
+      <div className="shrink-0 border border-surface-700 rounded-lg overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 bg-surface-800 border-b border-surface-700">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-surface-300">Debug Log</span>
+            <span className={`text-xs px-2 py-0.5 rounded ${isStartDisabled ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>
+              {isStartDisabled ? 'Start Disabled' : 'Ready'}
+            </span>
+            {!outputFolder && <span className="text-xs text-red-400">No output folder</span>}
+            {!defaultVoiceId && <span className="text-xs text-red-400">No voice</span>}
+            {pendingCount === 0 && lines.length > 0 && <span className="text-xs text-yellow-400">No pending lines</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setLogs([])}
+              className="text-xs text-surface-500 hover:text-surface-300"
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => setShowLogs(!showLogs)}
+              className="text-xs text-surface-500 hover:text-surface-300"
+            >
+              {showLogs ? 'Hide' : 'Show'}
+            </button>
+          </div>
+        </div>
+        {showLogs && (
+          <div className="h-32 overflow-y-auto bg-surface-900 p-2 font-mono text-xs">
+            {logs.length === 0 ? (
+              <div className="text-surface-500">No logs yet. Click Start to begin processing.</div>
+            ) : (
+              logs.map((log, i) => (
+                <div key={i} className={`${log.includes('ERROR') ? 'text-red-400' : log.includes('SUCCESS') ? 'text-green-400' : log.includes('DONE') ? 'text-blue-400' : 'text-surface-400'}`}>
+                  {log}
+                </div>
+              ))
+            )}
+            <div ref={logsEndRef} />
+          </div>
+        )}
+      </div>
+
+      {/* Voice Library Dialog */}
+      <VoiceLibraryDialog
+        isOpen={showVoiceLibrary}
+        onClose={() => setShowVoiceLibrary(false)}
+        onSelectVoice={(voice) => {
+          setDefaultVoice(voice.voice_id, voice.name);
+          addLog(`Selected voice: ${voice.name}`);
+        }}
+      />
     </div>
   );
 }

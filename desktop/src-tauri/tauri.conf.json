@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "2TTS",
-  "version": "1.0.8",
+  "version": "1.2.4",
   "identifier": "com.2tts.app",
   "build": {
     "frontendDist": "../dist",
@@ -45,6 +45,7 @@
     "resources": {
       "../public/*": "resources/"
     },
+    "createUpdaterArtifacts": true,
     "windows": {
       "nsis": {
         "installMode": "currentUser"
@@ -54,6 +55,12 @@
   "plugins": {
     "shell": {
       "open": true
+    },
+    "updater": {
+      "endpoints": [
+        "https://github.com/TuanTrong2290/2TTS/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ3RkU0OTk2OEUzOTY4NkIKUldScmFEbU9sa24rUnhWQW85eWcraitBa3dxK005cGUxSCs5MTNXQ0lMNUZVU2FlUlFxOTdVd3YK"
     }
   }
 }

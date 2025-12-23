@@ -19,11 +19,12 @@ interface DebugInfo {
 
 interface PlatformAPI {
   ipcCall: (request: string) => Promise<JsonRpcResponse>;
+  invoke: <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
   onBackendEvent: (callback: (data: { method: string; params: unknown }) => void) => () => void;
   onDebugInfo: (callback: (data: DebugInfo) => void) => () => void;
   dialog: {
     openDirectory: (title?: string) => Promise<string | null>;
-    openFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string | null>;
+    openFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[]; multiple?: boolean }) => Promise<string[] | null>;
     saveFile: (options?: { title?: string; defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string | null>;
   };
   window: {
@@ -38,6 +39,10 @@ function createTauriAPI(): PlatformAPI {
     ipcCall: async (request: string) => {
       const responseStr = await invoke<string>('ipc_call', { requestStr: request });
       return JSON.parse(responseStr);
+    },
+
+    invoke: async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
+      return invoke<T>(cmd, args);
     },
 
     onBackendEvent: (callback) => {
@@ -80,10 +85,12 @@ function createTauriAPI(): PlatformAPI {
       openFile: async (options) => {
         const result = await open({
           directory: false,
+          multiple: options?.multiple ?? false,
           title: options?.title || 'Select File',
           filters: options?.filters,
         });
-        return result as string | null;
+        if (!result) return null;
+        return Array.isArray(result) ? result : [result];
       },
 
       saveFile: async (options) => {

@@ -136,11 +136,13 @@ class Config:
         self._save_api_keys()
     
     def get_available_api_key(self) -> Optional[APIKey]:
-        """Get the next available API key for use"""
-        for key in self._api_keys:
-            if key.is_available:
-                return key
-        return None
+        """Get the next available API key for use (prioritizes smallest credits first)"""
+        available_keys = [k for k in self._api_keys if k.is_available]
+        if not available_keys:
+            return None
+        # Sort by remaining credits ascending (use smallest credits first)
+        available_keys.sort(key=lambda k: k.remaining_credits)
+        return available_keys[0]
     
     def get_total_credits(self) -> int:
         """Get total remaining credits across all keys"""

@@ -82,6 +82,7 @@ export interface TTSJobResult {
   output_path: string;
   duration_ms: number;
   characters_used: number;
+  language_code?: string;
 }
 
 export interface ConfigResult {
@@ -110,6 +111,24 @@ export interface APIKey {
   is_valid: boolean;
   last_checked: string | null;
   assigned_proxy_id: string | null;
+}
+
+export interface APIKeyStatusItem {
+  id: string;
+  key: string;
+  remaining_credits: number;
+  is_valid?: boolean;
+  is_active?: boolean;
+}
+
+export interface APIKeyStatus {
+  active_key: APIKeyStatusItem | null;
+  available_keys: APIKeyStatusItem[];
+  exhausted_keys: APIKeyStatusItem[];
+  total_credits: number;
+  total_keys: number;
+  available_count: number;
+  exhausted_count: number;
 }
 
 export interface Proxy {

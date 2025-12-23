@@ -28,7 +28,7 @@ def get_api() -> ElevenLabsAPI:
     return _elevenlabs_api
 
 
-BACKEND_VERSION = "1.0.8"
+BACKEND_VERSION = "1.2.4"
 PROTOCOL_VERSION = 1
 MIN_UI_VERSION = "1.0.0"
 
@@ -42,6 +42,15 @@ def register_handlers(server: JsonRpcServer):
         protocol = params.get("protocol_version", 0)
         
         compatible = protocol == PROTOCOL_VERSION
+        
+        # Track new session in analytics
+        try:
+            from services.analytics import get_analytics
+            analytics = get_analytics()
+            analytics._stats.total_sessions += 1
+            analytics._force_save_stats()
+        except Exception:
+            pass
         
         return {
             "ui_version": ui_version,
@@ -143,6 +152,54 @@ def register_handlers(server: JsonRpcServer):
             for k in config.api_keys
         ]
     
+    @server.method("apikeys.status")
+    def apikeys_status(params: dict, srv: JsonRpcServer) -> dict:
+        """Get API key usage status"""
+        config = get_config()
+        
+        all_keys = config.api_keys
+        active_key = config.get_available_api_key()
+        
+        # Get exhausted keys (0 credits or invalid)
+        exhausted_keys = [
+            {
+                "id": k.id,
+                "key": f"{k.key[:8]}...{k.key[-4:]}",
+                "remaining_credits": k.remaining_credits,
+                "is_valid": k.is_valid
+            }
+            for k in all_keys
+            if k.remaining_credits <= 0 or not k.is_valid
+        ]
+        
+        # Get available keys sorted by credits (smallest first)
+        available_keys = [
+            {
+                "id": k.id,
+                "key": f"{k.key[:8]}...{k.key[-4:]}",
+                "remaining_credits": k.remaining_credits,
+                "is_active": active_key and k.id == active_key.id
+            }
+            for k in sorted(
+                [k for k in all_keys if k.is_available],
+                key=lambda x: x.remaining_credits
+            )
+        ]
+        
+        return {
+            "active_key": {
+                "id": active_key.id,
+                "key": f"{active_key.key[:8]}...{active_key.key[-4:]}",
+                "remaining_credits": active_key.remaining_credits
+            } if active_key else None,
+            "available_keys": available_keys,
+            "exhausted_keys": exhausted_keys,
+            "total_credits": config.get_total_credits(),
+            "total_keys": len(all_keys),
+            "available_count": len(available_keys),
+            "exhausted_count": len(exhausted_keys)
+        }
+    
     @server.method("apikeys.add")
     def apikeys_add(params: dict, srv: JsonRpcServer) -> dict:
         name = params.get("name")
@@ -151,16 +208,46 @@ def register_handlers(server: JsonRpcServer):
         if not name or not key:
             raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "Name and key are required")
         
+        # Validate key format (ElevenLabs keys start with "sk_")
+        key = key.strip()
+        if not key.startswith("sk_"):
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "Invalid API key format. ElevenLabs keys start with 'sk_'")
+        
+        if len(key) < 20:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "Invalid API key format. Key is too short")
+        
         config = get_config()
+        
+        # Check for duplicate keys
+        for existing_key in config.api_keys:
+            if existing_key.key == key:
+                raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "This API key already exists")
+        
+        # Create API key object
         api_key = APIKey(
             id=str(uuid.uuid4()),
             name=name,
             key=key,
-            remaining_credits=0,
-            is_valid=True,
-            last_checked=None,
+            is_valid=False,
             assigned_proxy_id=None
         )
+        
+        # Validate with ElevenLabs API
+        api = get_api()
+        success, message = api.validate_key(api_key, None)
+        
+        if not success:
+            raise JsonRpcError(ErrorCodes.APP_INVALID_API_KEY, f"API key validation failed: {message}")
+        
+        # Check credit threshold
+        min_credits = config.get("low_credit_threshold", 1000)
+        if api_key.remaining_credits < min_credits:
+            raise JsonRpcError(
+                ErrorCodes.INVALID_PARAMS, 
+                f"API key has insufficient credits ({api_key.remaining_credits}). Minimum required: {min_credits}"
+            )
+        
+        # Save the key
         config.add_api_key(api_key)
         
         return {
@@ -168,6 +255,8 @@ def register_handlers(server: JsonRpcServer):
             "name": api_key.name,
             "key": api_key.key,
             "remaining_credits": api_key.remaining_credits,
+            "character_count": api_key.character_count,
+            "character_limit": api_key.character_limit,
             "is_valid": api_key.is_valid,
             "last_checked": None,
             "assigned_proxy_id": None
@@ -364,6 +453,36 @@ def register_handlers(server: JsonRpcServer):
             for v in voices
         ]
     
+    def sanitize_text(text: str) -> str:
+        """Remove invalid Unicode characters (unpaired surrogates, etc.)"""
+        import re
+        # Remove surrogate pairs and other problematic characters
+        # This regex removes characters in the surrogate range
+        text = re.sub(r'[\ud800-\udfff]', '', text)
+        # Remove other control characters except newlines and tabs
+        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+        # Encode and decode to ensure valid UTF-8
+        text = text.encode('utf-8', errors='ignore').decode('utf-8')
+        return text.strip()
+
+    def detect_language(text: str) -> str:
+        """Detect language of text, returns ISO 639-1 code"""
+        try:
+            from langdetect import detect, DetectorFactory
+            # Make detection deterministic
+            DetectorFactory.seed = 0
+            lang = detect(text)
+            # Map common language codes to ElevenLabs supported codes
+            lang_map = {
+                'zh-cn': 'zh',
+                'zh-tw': 'zh', 
+                'pt-br': 'pt',
+                'pt-pt': 'pt',
+            }
+            return lang_map.get(lang, lang)
+        except Exception:
+            return 'en'  # Default to English if detection fails
+
     @server.method("tts.start")
     def tts_start(params: dict, srv: JsonRpcServer) -> dict:
         text = params.get("text")
@@ -372,6 +491,14 @@ def register_handlers(server: JsonRpcServer):
         
         if not text or not voice_id or not output_path:
             raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "text, voice_id, and output_path are required")
+        
+        # Sanitize text to remove invalid Unicode
+        text = sanitize_text(text)
+        
+        # Auto-detect language (can be overridden by params)
+        language_code = params.get("language_code")
+        if not language_code:
+            language_code = detect_language(text)
         
         config = get_config()
         api = get_api()
@@ -416,7 +543,8 @@ def register_handlers(server: JsonRpcServer):
             api_key=api_key,
             output_path=output_path,
             settings=settings,
-            proxy=proxy
+            proxy=proxy,
+            language_code=language_code
         )
         
         if not success:
@@ -429,13 +557,22 @@ def register_handlers(server: JsonRpcServer):
         api_key.character_count += len(text)
         config.update_api_key(api_key)
         
+        # Track analytics
+        try:
+            from services.analytics import get_analytics
+            analytics = get_analytics()
+            analytics.track_tts(len(text), 1, voice_id)
+        except Exception:
+            pass  # Don't fail if analytics fails
+        
         srv.send_progress(job_id, 100, "Complete")
         
         return {
             "job_id": job_id,
             "output_path": output_path,
             "duration_ms": int((duration or 0) * 1000),
-            "characters_used": len(text)
+            "characters_used": len(text),
+            "language_code": language_code
         }
     
     @server.method("jobs.cancel")
@@ -658,3 +795,715 @@ def register_handlers(server: JsonRpcServer):
             raise JsonRpcError(ErrorCodes.APP_FILE_NOT_FOUND, "Project file not found")
         except Exception as e:
             raise JsonRpcError(ErrorCodes.INTERNAL_ERROR, f"Failed to load project: {str(e)}")
+
+    # ============================================
+    # TRANSCRIPTION (Speech-to-Text) HANDLERS
+    # ============================================
+    
+    @server.method("transcription.start")
+    def transcription_start(params: dict, srv: JsonRpcServer) -> dict:
+        """Start transcription job"""
+        file_path = params.get("file_path")
+        language = params.get("language")  # None for auto-detect
+        diarize = params.get("diarize", False)
+        num_speakers = params.get("num_speakers")
+        
+        if not file_path:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "file_path is required")
+        
+        if not os.path.exists(file_path):
+            raise JsonRpcError(ErrorCodes.APP_FILE_NOT_FOUND, "File not found")
+        
+        config = get_config()
+        api = get_api()
+        
+        api_key = config.get_available_api_key()
+        if not api_key:
+            raise JsonRpcError(ErrorCodes.APP_INVALID_API_KEY, "No valid API key available")
+        
+        proxy = config.get_proxy_for_key(api_key)
+        job_id = str(uuid.uuid4())
+        
+        srv.send_progress(job_id, 10, "Starting transcription...")
+        
+        success, result = api.transcribe_audio(
+            file_path=file_path,
+            api_key=api_key,
+            language=language,
+            diarize=diarize,
+            num_speakers=num_speakers,
+            proxy=proxy
+        )
+        
+        if not success:
+            raise JsonRpcError(ErrorCodes.APP_TTS_FAILED, f"Transcription failed: {result}")
+        
+        srv.send_progress(job_id, 100, "Complete")
+        
+        return {
+            "job_id": job_id,
+            "text": result.text,
+            "language": result.language,
+            "segments": [
+                {
+                    "start": s.start,
+                    "end": s.end,
+                    "text": s.text,
+                    "speaker": s.speaker
+                }
+                for s in result.segments
+            ],
+            "speakers": [
+                {"id": sp.id, "name": sp.name}
+                for sp in result.speakers
+            ] if result.speakers else []
+        }
+    
+    @server.method("transcription.supported_formats")
+    def transcription_formats(params: dict, srv: JsonRpcServer) -> dict:
+        """Get supported transcription formats"""
+        return {
+            "audio": [".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".wma"],
+            "video": [".mp4", ".mkv", ".avi", ".mov", ".webm", ".wmv", ".flv"]
+        }
+
+    # ============================================
+    # VOICE PRESETS HANDLERS
+    # ============================================
+    
+    @server.method("presets.list")
+    def presets_list(params: dict, srv: JsonRpcServer) -> List[dict]:
+        """List all voice presets"""
+        from services.preset_manager import get_preset_manager
+        pm = get_preset_manager()
+        return [p.to_dict() for p in pm.get_presets()]
+    
+    @server.method("presets.save")
+    def presets_save(params: dict, srv: JsonRpcServer) -> dict:
+        """Save a voice preset"""
+        name = params.get("name")
+        voice_id = params.get("voice_id")
+        voice_name = params.get("voice_name", "")
+        settings = params.get("settings", {})
+        description = params.get("description", "")
+        tags = params.get("tags", [])
+        
+        if not name or not voice_id:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "name and voice_id are required")
+        
+        from services.preset_manager import get_preset_manager, VoicePreset
+        from core.models import VoiceSettings
+        
+        pm = get_preset_manager()
+        preset = VoicePreset(
+            id=str(uuid.uuid4()),
+            name=name,
+            voice_id=voice_id,
+            voice_name=voice_name,
+            settings=VoiceSettings.from_dict(settings),
+            description=description,
+            tags=tags
+        )
+        pm.add_preset(preset)
+        return preset.to_dict()
+    
+    @server.method("presets.delete")
+    def presets_delete(params: dict, srv: JsonRpcServer) -> dict:
+        """Delete a voice preset"""
+        preset_id = params.get("id")
+        if not preset_id:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "id is required")
+        
+        from services.preset_manager import get_preset_manager
+        pm = get_preset_manager()
+        pm.remove_preset(preset_id)
+        return {"success": True}
+
+    # ============================================
+    # VOICE MATCHER HANDLERS
+    # ============================================
+    
+    @server.method("voicematcher.patterns.list")
+    def voicematcher_patterns_list(params: dict, srv: JsonRpcServer) -> List[dict]:
+        """List voice matching patterns"""
+        from services.voice_matcher import get_voice_matcher
+        vm = get_voice_matcher()
+        return [p.to_dict() for p in vm.get_patterns()]
+    
+    @server.method("voicematcher.patterns.add")
+    def voicematcher_patterns_add(params: dict, srv: JsonRpcServer) -> dict:
+        """Add a voice matching pattern"""
+        name = params.get("name")
+        pattern = params.get("pattern")
+        voice_id = params.get("voice_id")
+        voice_name = params.get("voice_name", "")
+        match_type = params.get("match_type", "contains")
+        case_sensitive = params.get("case_sensitive", False)
+        priority = params.get("priority", 0)
+        
+        if not name or not pattern or not voice_id:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "name, pattern and voice_id are required")
+        
+        from services.voice_matcher import get_voice_matcher, VoicePattern
+        vm = get_voice_matcher()
+        
+        vp = VoicePattern(
+            id=str(uuid.uuid4()),
+            name=name,
+            pattern=pattern,
+            voice_id=voice_id,
+            voice_name=voice_name,
+            match_type=match_type,
+            case_sensitive=case_sensitive,
+            priority=priority
+        )
+        vm.add_pattern(vp)
+        return vp.to_dict()
+    
+    @server.method("voicematcher.patterns.delete")
+    def voicematcher_patterns_delete(params: dict, srv: JsonRpcServer) -> dict:
+        """Delete a voice matching pattern"""
+        pattern_id = params.get("id")
+        if not pattern_id:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "id is required")
+        
+        from services.voice_matcher import get_voice_matcher
+        vm = get_voice_matcher()
+        vm.remove_pattern(pattern_id)
+        return {"success": True}
+    
+    @server.method("voicematcher.match")
+    def voicematcher_match(params: dict, srv: JsonRpcServer) -> dict:
+        """Match text to voice based on patterns"""
+        text = params.get("text")
+        if not text:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "text is required")
+        
+        from services.voice_matcher import get_voice_matcher
+        vm = get_voice_matcher()
+        result = vm.match(text)
+        
+        if result:
+            return {
+                "matched": True,
+                "voice_id": result.voice_id,
+                "voice_name": result.voice_name,
+                "pattern_name": result.pattern_name
+            }
+        return {"matched": False}
+    
+    @server.method("voicematcher.batch_match")
+    def voicematcher_batch_match(params: dict, srv: JsonRpcServer) -> List[dict]:
+        """Match multiple texts to voices"""
+        lines = params.get("lines", [])
+        
+        from services.voice_matcher import get_voice_matcher
+        vm = get_voice_matcher()
+        
+        results = []
+        for line in lines:
+            text = line.get("text", "")
+            line_id = line.get("id")
+            result = vm.match(text)
+            
+            if result:
+                results.append({
+                    "id": line_id,
+                    "matched": True,
+                    "voice_id": result.voice_id,
+                    "voice_name": result.voice_name
+                })
+            else:
+                results.append({"id": line_id, "matched": False})
+        
+        return results
+
+    # ============================================
+    # PAUSE PREPROCESSOR HANDLERS
+    # ============================================
+    
+    @server.method("pause.process")
+    def pause_process(params: dict, srv: JsonRpcServer) -> dict:
+        """Process text to add pauses"""
+        text = params.get("text")
+        settings = params.get("settings", {})
+        
+        if not text:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "text is required")
+        
+        from services.pause_preprocessor import PausePreprocessor, PauseSettings
+        
+        pause_settings = PauseSettings.from_dict(settings) if settings else PauseSettings()
+        processor = PausePreprocessor(pause_settings)
+        processed = processor.process(text)
+        
+        return {"original": text, "processed": processed}
+    
+    @server.method("pause.batch_process")
+    def pause_batch_process(params: dict, srv: JsonRpcServer) -> List[dict]:
+        """Process multiple texts to add pauses"""
+        lines = params.get("lines", [])
+        settings = params.get("settings", {})
+        
+        from services.pause_preprocessor import PausePreprocessor, PauseSettings
+        
+        pause_settings = PauseSettings.from_dict(settings) if settings else PauseSettings()
+        processor = PausePreprocessor(pause_settings)
+        
+        results = []
+        for line in lines:
+            text = line.get("text", "")
+            line_id = line.get("id")
+            processed = processor.process(text)
+            results.append({
+                "id": line_id,
+                "original": text,
+                "processed": processed
+            })
+        
+        return results
+
+    # ============================================
+    # AUDIO POST-PROCESSING HANDLERS
+    # ============================================
+    
+    @server.method("audio.process")
+    def audio_process(params: dict, srv: JsonRpcServer) -> dict:
+        """Process audio file with effects"""
+        input_path = params.get("input_path")
+        output_path = params.get("output_path")
+        settings = params.get("settings", {})
+        
+        if not input_path or not output_path:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "input_path and output_path are required")
+        
+        if not os.path.exists(input_path):
+            raise JsonRpcError(ErrorCodes.APP_FILE_NOT_FOUND, "Input file not found")
+        
+        from services.audio_processor import AudioProcessor, AudioProcessingSettings
+        
+        proc_settings = AudioProcessingSettings.from_dict(settings)
+        processor = AudioProcessor()
+        
+        success, message = processor.process(input_path, output_path, proc_settings)
+        
+        if success:
+            return {"success": True, "output_path": output_path}
+        else:
+            raise JsonRpcError(ErrorCodes.INTERNAL_ERROR, f"Audio processing failed: {message}")
+    
+    @server.method("audio.batch_process")
+    def audio_batch_process(params: dict, srv: JsonRpcServer) -> dict:
+        """Process multiple audio files"""
+        files = params.get("files", [])  # [{input_path, output_path}, ...]
+        settings = params.get("settings", {})
+        
+        from services.audio_processor import AudioProcessor, AudioProcessingSettings
+        
+        proc_settings = AudioProcessingSettings.from_dict(settings)
+        processor = AudioProcessor()
+        
+        results = []
+        success_count = 0
+        
+        for i, f in enumerate(files):
+            input_path = f.get("input_path")
+            output_path = f.get("output_path")
+            
+            if input_path and output_path and os.path.exists(input_path):
+                success, message = processor.process(input_path, output_path, proc_settings)
+                results.append({
+                    "input_path": input_path,
+                    "output_path": output_path,
+                    "success": success,
+                    "message": message
+                })
+                if success:
+                    success_count += 1
+            
+            srv.send_progress("batch_audio", int((i + 1) / len(files) * 100), f"Processing {i + 1}/{len(files)}")
+        
+        return {
+            "total": len(files),
+            "success": success_count,
+            "failed": len(files) - success_count,
+            "results": results
+        }
+
+    # ============================================
+    # ANALYTICS HANDLERS
+    # ============================================
+    
+    @server.method("analytics.get_stats")
+    def analytics_get_stats(params: dict, srv: JsonRpcServer) -> dict:
+        """Get usage statistics"""
+        from services.analytics import get_analytics
+        analytics = get_analytics()
+        stats = analytics.get_stats()
+        
+        return {
+            "total_characters": stats.total_characters,
+            "total_lines": stats.total_lines,
+            "total_sessions": stats.total_sessions,
+            "total_processing_time": stats.total_processing_time,
+            "voice_usage": stats.voice_usage,
+            "daily_usage": stats.daily_usage,
+            "error_count": stats.error_count,
+            "first_use": stats.first_use.isoformat() if stats.first_use else None,
+            "last_use": stats.last_use.isoformat() if stats.last_use else None
+        }
+    
+    @server.method("analytics.track_usage")
+    def analytics_track_usage(params: dict, srv: JsonRpcServer) -> dict:
+        """Track usage event"""
+        characters = params.get("characters", 0)
+        lines = params.get("lines", 0)
+        voice_id = params.get("voice_id")
+        
+        from services.analytics import get_analytics
+        analytics = get_analytics()
+        analytics.track_tts(characters, lines, voice_id)
+        
+        return {"success": True}
+    
+    @server.method("analytics.reset")
+    def analytics_reset(params: dict, srv: JsonRpcServer) -> dict:
+        """Reset analytics data"""
+        from services.analytics import get_analytics
+        analytics = get_analytics()
+        analytics.reset()
+        return {"success": True}
+
+    # ============================================
+    # PROXY MANAGEMENT HANDLERS
+    # ============================================
+    
+    @server.method("proxies.list")
+    def proxies_list(params: dict, srv: JsonRpcServer) -> List[dict]:
+        """List all proxies"""
+        config = get_config()
+        return [
+            {
+                "id": p.id,
+                "name": p.name,
+                "host": p.host,
+                "port": p.port,
+                "username": p.username,
+                "proxy_type": p.proxy_type,
+                "is_enabled": p.is_enabled
+            }
+            for p in config.proxies
+        ]
+    
+    @server.method("proxies.add")
+    def proxies_add(params: dict, srv: JsonRpcServer) -> dict:
+        """Add a proxy"""
+        name = params.get("name")
+        host = params.get("host")
+        port = params.get("port")
+        username = params.get("username", "")
+        password = params.get("password", "")
+        proxy_type = params.get("proxy_type", "http")
+        
+        if not name or not host or not port:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "name, host and port are required")
+        
+        from core.models import Proxy
+        
+        proxy = Proxy(
+            id=str(uuid.uuid4()),
+            name=name,
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            proxy_type=proxy_type,
+            is_enabled=True
+        )
+        
+        config = get_config()
+        config.add_proxy(proxy)
+        
+        return {
+            "id": proxy.id,
+            "name": proxy.name,
+            "host": proxy.host,
+            "port": proxy.port,
+            "proxy_type": proxy.proxy_type
+        }
+    
+    @server.method("proxies.remove")
+    def proxies_remove(params: dict, srv: JsonRpcServer) -> dict:
+        """Remove a proxy"""
+        proxy_id = params.get("id")
+        if not proxy_id:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "id is required")
+        
+        config = get_config()
+        config.remove_proxy(proxy_id)
+        return {"success": True}
+    
+    @server.method("proxies.test")
+    def proxies_test(params: dict, srv: JsonRpcServer) -> dict:
+        """Test proxy connection"""
+        proxy_id = params.get("id")
+        if not proxy_id:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "id is required")
+        
+        config = get_config()
+        proxy = None
+        for p in config.proxies:
+            if p.id == proxy_id:
+                proxy = p
+                break
+        
+        if not proxy:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "Proxy not found")
+        
+        import requests
+        try:
+            proxies = {
+                "http": f"{proxy.proxy_type}://{proxy.host}:{proxy.port}",
+                "https": f"{proxy.proxy_type}://{proxy.host}:{proxy.port}"
+            }
+            if proxy.username and proxy.password:
+                proxies = {
+                    "http": f"{proxy.proxy_type}://{proxy.username}:{proxy.password}@{proxy.host}:{proxy.port}",
+                    "https": f"{proxy.proxy_type}://{proxy.username}:{proxy.password}@{proxy.host}:{proxy.port}"
+                }
+            
+            response = requests.get("https://api.elevenlabs.io/v1/voices", proxies=proxies, timeout=10)
+            return {"success": True, "status_code": response.status_code}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    @server.method("proxies.assign_to_key")
+    def proxies_assign_to_key(params: dict, srv: JsonRpcServer) -> dict:
+        """Assign proxy to API key"""
+        key_id = params.get("key_id")
+        proxy_id = params.get("proxy_id")  # None to unassign
+        
+        if not key_id:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "key_id is required")
+        
+        config = get_config()
+        
+        for api_key in config.api_keys:
+            if api_key.id == key_id:
+                api_key.assigned_proxy_id = proxy_id
+                config.update_api_key(api_key)
+                return {"success": True}
+        
+        raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "API key not found")
+
+    # ============================================
+    # VOICE LIBRARY HANDLERS
+    # ============================================
+    
+    @server.method("voices.search")
+    def voices_search(params: dict, srv: JsonRpcServer) -> List[dict]:
+        """Search voices with filters"""
+        query = params.get("query", "")
+        category = params.get("category")
+        gender = params.get("gender")
+        language = params.get("language")
+        use_case = params.get("use_case")
+        
+        config = get_config()
+        api = get_api()
+        
+        api_key = config.get_available_api_key()
+        if not api_key:
+            raise JsonRpcError(ErrorCodes.APP_INVALID_API_KEY, "No valid API key available")
+        
+        proxy = config.get_proxy_for_key(api_key)
+        
+        voices = api.search_voices(
+            api_key=api_key,
+            proxy=proxy,
+            query=query,
+            gender=gender,
+            language=language,
+            use_case=use_case,
+            category=category
+        )
+        
+        return [
+            {
+                "voice_id": v.voice_id,
+                "name": v.name,
+                "category": v.category,
+                "labels": v.labels,
+                "description": v.description,
+                "preview_url": v.preview_url
+            }
+            for v in voices
+        ]
+    
+    @server.method("voices.get_details")
+    def voices_get_details(params: dict, srv: JsonRpcServer) -> dict:
+        """Get detailed voice info"""
+        voice_id = params.get("voice_id")
+        if not voice_id:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "voice_id is required")
+        
+        config = get_config()
+        api = get_api()
+        
+        api_key = config.get_available_api_key()
+        if not api_key:
+            raise JsonRpcError(ErrorCodes.APP_INVALID_API_KEY, "No valid API key available")
+        
+        voice = api.get_voice(voice_id, api_key)
+        if not voice:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "Voice not found")
+        
+        return {
+            "voice_id": voice.voice_id,
+            "name": voice.name,
+            "category": voice.category,
+            "labels": voice.labels if hasattr(voice, 'labels') else {},
+            "description": voice.description if hasattr(voice, 'description') else "",
+            "preview_url": voice.preview_url if hasattr(voice, 'preview_url') else None,
+            "settings": voice.default_settings.to_dict() if hasattr(voice, 'default_settings') and voice.default_settings else None
+        }
+
+    # ============================================
+    # BATCH TTS (Multi-thread) HANDLERS
+    # ============================================
+    
+    @server.method("tts.batch_start")
+    def tts_batch_start(params: dict, srv: JsonRpcServer) -> dict:
+        """Start batch TTS processing with multiple threads"""
+        lines = params.get("lines", [])
+        thread_count = params.get("thread_count", 2)
+        settings = params.get("settings", {})
+        
+        if not lines:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "lines are required")
+        
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        config = get_config()
+        api = get_api()
+        
+        batch_id = str(uuid.uuid4())
+        results = []
+        completed = 0
+        failed = 0
+        
+        def process_line(line_data):
+            nonlocal completed, failed
+            
+            text = sanitize_text(line_data.get("text", ""))
+            voice_id = line_data.get("voice_id")
+            output_path = line_data.get("output_path")
+            line_id = line_data.get("id")
+            
+            if not text or not voice_id or not output_path:
+                return {"id": line_id, "success": False, "error": "Missing required fields"}
+            
+            # Detect language
+            lang = detect_language(text)
+            
+            # Get API key
+            api_key = config.get_available_api_key()
+            if not api_key:
+                return {"id": line_id, "success": False, "error": "No API key available"}
+            
+            proxy = config.get_proxy_for_key(api_key)
+            
+            # Build settings
+            voice_settings = VoiceSettings(
+                stability=settings.get("stability", 0.5),
+                similarity_boost=settings.get("similarity_boost", 0.75),
+                style=settings.get("style", 0.0),
+                use_speaker_boost=settings.get("use_speaker_boost", True),
+                speed=settings.get("speed", 1.0)
+            )
+            
+            model_id = settings.get("model_id")
+            if model_id:
+                from core.models import TTSModel
+                try:
+                    voice_settings.model = TTSModel(model_id)
+                except ValueError:
+                    pass
+            
+            success, message, duration = api.text_to_speech(
+                text=text,
+                voice_id=voice_id,
+                api_key=api_key,
+                output_path=output_path,
+                settings=voice_settings,
+                proxy=proxy,
+                language_code=lang
+            )
+            
+            if success:
+                api_key.character_count += len(text)
+                config.update_api_key(api_key)
+                return {
+                    "id": line_id,
+                    "success": True,
+                    "output_path": output_path,
+                    "duration_ms": int((duration or 0) * 1000),
+                    "language_code": lang
+                }
+            else:
+                return {"id": line_id, "success": False, "error": message}
+        
+        # Process in parallel
+        with ThreadPoolExecutor(max_workers=min(thread_count, 5)) as executor:
+            futures = {executor.submit(process_line, line): line for line in lines}
+            
+            for future in as_completed(futures):
+                result = future.result()
+                results.append(result)
+                
+                if result.get("success"):
+                    completed += 1
+                else:
+                    failed += 1
+                
+                srv.send_progress(
+                    batch_id, 
+                    int((completed + failed) / len(lines) * 100),
+                    f"Processed {completed + failed}/{len(lines)}"
+                )
+        
+        return {
+            "batch_id": batch_id,
+            "total": len(lines),
+            "completed": completed,
+            "failed": failed,
+            "results": results
+        }
+
+    # ============================================
+    # LOCALIZATION HANDLERS
+    # ============================================
+    
+    @server.method("i18n.get_languages")
+    def i18n_get_languages(params: dict, srv: JsonRpcServer) -> List[dict]:
+        """Get available languages"""
+        return [
+            {"code": "en", "name": "English"},
+            {"code": "vi", "name": "Tiếng Việt"},
+            {"code": "zh", "name": "中文"},
+            {"code": "ja", "name": "日本語"},
+            {"code": "ko", "name": "한국어"},
+            {"code": "fr", "name": "Français"},
+            {"code": "de", "name": "Deutsch"},
+            {"code": "es", "name": "Español"},
+            {"code": "pt", "name": "Português"},
+            {"code": "ru", "name": "Русский"}
+        ]
+    
+    @server.method("i18n.get_translations")
+    def i18n_get_translations(params: dict, srv: JsonRpcServer) -> dict:
+        """Get translations for a language"""
+        lang = params.get("language", "en")
+        
+        from services.localization import get_translations
+        return get_translations(lang)

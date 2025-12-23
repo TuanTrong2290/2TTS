@@ -231,9 +231,30 @@ class ElevenLabsAPI:
         except requests.RequestException as e:
             return None, f"Connection error: {str(e)}"
     
-    def search_voices(self, api_key: APIKey, proxy: Optional[Proxy] = None) -> List[Voice]:
-        """Fetch voices from ElevenLabs public voice library"""
+    def search_voices(
+        self,
+        api_key: APIKey,
+        proxy: Optional[Proxy] = None,
+        query: Optional[str] = None,
+        gender: Optional[str] = None,
+        language: Optional[str] = None,
+        use_case: Optional[str] = None,
+        category: Optional[str] = None
+    ) -> List[Voice]:
+        """Fetch voices from ElevenLabs public voice library with filters"""
         voices = []
+        
+        params = {"page_size": 100}
+        if query:
+            params["search"] = query
+        if gender:
+            params["gender"] = gender
+        if language:
+            params["language"] = language
+        if use_case:
+            params["use_cases"] = use_case
+        if category:
+            params["category"] = category
         
         try:
             # Get shared/public voices
@@ -241,7 +262,7 @@ class ElevenLabsAPI:
                 f"{self.BASE_URL}/shared-voices",
                 headers=self._get_headers(api_key.key),
                 proxies=self._get_proxies(proxy),
-                params={"page_size": 100},
+                params=params,
                 timeout=30
             )
             
@@ -253,7 +274,9 @@ class ElevenLabsAPI:
                         name=v.get("name", "Unknown"),
                         is_cloned=False,
                         category=v.get("category", "library"),
-                        labels=v.get("labels", {})
+                        labels=v.get("labels", {}),
+                        preview_url=v.get("preview_url"),
+                        description=v.get("description", "")
                     )
                     voices.append(voice)
         except requests.RequestException:
@@ -700,7 +723,8 @@ class ElevenLabsAPI:
         api_key: APIKey,
         output_path: str,
         settings: Optional[VoiceSettings] = None,
-        proxy: Optional[Proxy] = None
+        proxy: Optional[Proxy] = None,
+        language_code: Optional[str] = None
     ) -> Tuple[bool, str, Optional[float]]:
         """
         Convert text to speech
@@ -722,6 +746,10 @@ class ElevenLabsAPI:
                 "speed": settings.speed
             }
         }
+        
+        # Add language code if provided (for multilingual models)
+        if language_code:
+            payload["language_code"] = language_code
         
         headers = self._get_headers(api_key.key)
         headers["Accept"] = "audio/mpeg"

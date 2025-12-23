@@ -20,6 +20,12 @@
     "shell:allow-spawn",
     "shell:allow-stdin-write",
     "shell:allow-kill",
+    "updater:default",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
+    "process:default",
+    "process:allow-restart",
+    "process:allow-exit",
     {
       "identifier": "shell:allow-execute",
       "allow": [

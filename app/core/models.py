@@ -28,11 +28,12 @@ class ProxyType(Enum):
 
 
 class TTSModel(Enum):
-    V3_ALPHA = "eleven_v3"
-    TURBO_V25 = "eleven_turbo_v2_5"
-    MULTILINGUAL_V2 = "eleven_multilingual_v2"
-    FLASH_V25 = "eleven_flash_v2_5"
-    FLASH_V2 = "eleven_flash_v2"
+    V3 = "eleven_v3"  # 70+ langs, 5k chars, most expressive
+    MULTILINGUAL_V2 = "eleven_multilingual_v2"  # 29 langs, 10k chars, stable
+    TURBO_V25 = "eleven_turbo_v2_5"  # 32 langs, 40k chars, ~250-300ms
+    TURBO_V2 = "eleven_turbo_v2"  # English only, 30k chars, ~250-300ms
+    FLASH_V25 = "eleven_flash_v2_5"  # 32 langs, 40k chars, ~75ms
+    FLASH_V2 = "eleven_flash_v2"  # English only, 30k chars, ~75ms
 
 
 @dataclass
@@ -42,7 +43,7 @@ class VoiceSettings:
     style: float = 0.0  # Style exaggeration (0-1), increases latency
     use_speaker_boost: bool = True  # Enhances similarity, increases latency
     speed: float = 1.0
-    model: TTSModel = TTSModel.V3_ALPHA
+    model: TTSModel = TTSModel.V3
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -62,7 +63,7 @@ class VoiceSettings:
             style=data.get("style", 0.0),
             use_speaker_boost=data.get("use_speaker_boost", True),
             speed=data.get("speed", 1.0),
-            model=TTSModel(data.get("model", TTSModel.V3_ALPHA.value))
+            model=TTSModel(data.get("model", TTSModel.V3.value))
         )
 
 
@@ -74,6 +75,8 @@ class Voice:
     settings: VoiceSettings = field(default_factory=VoiceSettings)
     category: str = ""
     labels: Dict[str, str] = field(default_factory=dict)
+    preview_url: Optional[str] = None
+    description: str = ""
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -82,7 +85,9 @@ class Voice:
             "is_cloned": self.is_cloned,
             "settings": self.settings.to_dict(),
             "category": self.category,
-            "labels": self.labels
+            "labels": self.labels,
+            "preview_url": self.preview_url,
+            "description": self.description
         }
     
     @classmethod
@@ -93,7 +98,9 @@ class Voice:
             is_cloned=data.get("is_cloned", False),
             settings=VoiceSettings.from_dict(data.get("settings", {})),
             category=data.get("category", ""),
-            labels=data.get("labels", {})
+            labels=data.get("labels", {}),
+            preview_url=data.get("preview_url"),
+            description=data.get("description", "")
         )
 
 

@@ -144,6 +144,52 @@ class AnalyticsService:
         except:
             pass
     
+    def reset(self):
+        """Alias for clear_data"""
+        self.clear_data()
+    
+    def track_tts(self, characters: int, lines: int = 1, voice_id: Optional[str] = None):
+        """Simple tracking method for TTS usage (always tracks, regardless of session)"""
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        
+        # Update stats directly
+        self._stats.total_characters += characters
+        self._stats.total_lines += lines
+        
+        if not self._stats.first_use:
+            self._stats.first_use = now
+        self._stats.last_use = now
+        
+        # Update daily usage
+        self._stats.daily_usage[today] = self._stats.daily_usage.get(today, 0) + characters
+        
+        # Update voice usage
+        if voice_id:
+            self._stats.voice_usage[voice_id] = self._stats.voice_usage.get(voice_id, 0) + 1
+        
+        # Always save (force save regardless of enabled flag)
+        self._force_save_stats()
+    
+    def _force_save_stats(self):
+        """Save stats regardless of enabled flag"""
+        try:
+            self._config_dir.mkdir(parents=True, exist_ok=True)
+            with open(self._analytics_file, 'w') as f:
+                json.dump({
+                    "total_characters": self._stats.total_characters,
+                    "total_lines": self._stats.total_lines,
+                    "total_sessions": self._stats.total_sessions,
+                    "total_processing_time": self._stats.total_processing_time,
+                    "voice_usage": self._stats.voice_usage,
+                    "daily_usage": self._stats.daily_usage,
+                    "error_count": self._stats.error_count,
+                    "first_use": self._stats.first_use.isoformat() if self._stats.first_use else None,
+                    "last_use": self._stats.last_use.isoformat() if self._stats.last_use else None
+                }, f, indent=2)
+        except:
+            pass
+    
     # Session management
     def start_session(self):
         """Start a new analytics session"""

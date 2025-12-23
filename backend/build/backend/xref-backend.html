@@ -332,7 +332,7 @@ imported by:
   <a target="code" href="" type="text/plain"><tt>'org.python'</tt></a>
 <span class="moduletype">MissingModule</span>  <div class="import">
 imported by:
-    <a href="#copy">copy</a>
+    <a href="#pickle">pickle</a>
  &#8226;   <a href="#xml.sax">xml.sax</a>
 
   </div>
@@ -4534,6 +4534,7 @@ imported by:
  &#8226;   <a href="#requests.structures">requests.structures</a>
  &#8226;   <a href="#requests.utils">requests.utils</a>
  &#8226;   <a href="#selectors">selectors</a>
+ &#8226;   <a href="#services.analytics">services.analytics</a>
  &#8226;   <a href="#shlex">shlex</a>
  &#8226;   <a href="#shutil">shutil</a>
  &#8226;   <a href="#socks">socks</a>
@@ -4636,6 +4637,7 @@ imported by:
  &#8226;   <a href="#concurrent.futures._base">concurrent.futures._base</a>
  &#8226;   <a href="#concurrent.futures.process">concurrent.futures.process</a>
  &#8226;   <a href="#concurrent.futures.thread">concurrent.futures.thread</a>
+ &#8226;   <a href="#ipc.handlers">ipc.handlers</a>
 
   </div>
 
@@ -4803,8 +4805,8 @@ imported by:
   <a target="code" href="///C:/Users/TRONGTUAN/miniconda3/lib/copy.py" type="text/plain"><tt>copy</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
-    <a href="#'org.python'">'org.python'</a>
- &#8226;   <a href="#copyreg">copyreg</a>
+    <a href="#copyreg">copyreg</a>
+ &#8226;   <a href="#org">org</a>
  &#8226;   <a href="#types">types</a>
  &#8226;   <a href="#weakref">weakref</a>
 
@@ -4908,6 +4910,8 @@ imported by:
  &#8226;   <a href="#services.audio">services.audio</a>
  &#8226;   <a href="#services.elevenlabs">services.elevenlabs</a>
  &#8226;   <a href="#services.file_import">services.file_import</a>
+ &#8226;   <a href="#services.preset_manager">services.preset_manager</a>
+ &#8226;   <a href="#services.voice_matcher">services.voice_matcher</a>
 
   </div>
 
@@ -6345,6 +6349,11 @@ imported by:
  &#8226;   <a href="#core.models">core.models</a>
  &#8226;   <a href="#cryptography.hazmat.primitives.serialization.ssh">cryptography.hazmat.primitives.serialization.ssh</a>
  &#8226;   <a href="#ipc.types">ipc.types</a>
+ &#8226;   <a href="#services.analytics">services.analytics</a>
+ &#8226;   <a href="#services.audio_processor">services.audio_processor</a>
+ &#8226;   <a href="#services.pause_preprocessor">services.pause_preprocessor</a>
+ &#8226;   <a href="#services.preset_manager">services.preset_manager</a>
+ &#8226;   <a href="#services.voice_matcher">services.voice_matcher</a>
 
   </div>
 
@@ -6383,7 +6392,9 @@ imported by:
  &#8226;   <a href="#pysrt.srttime">pysrt.srttime</a>
  &#8226;   <a href="#requests.models">requests.models</a>
  &#8226;   <a href="#requests.sessions">requests.sessions</a>
+ &#8226;   <a href="#services.analytics">services.analytics</a>
  &#8226;   <a href="#services.elevenlabs">services.elevenlabs</a>
+ &#8226;   <a href="#services.preset_manager">services.preset_manager</a>
  &#8226;   <a href="#soupsieve.css_match">soupsieve.css_match</a>
  &#8226;   <a href="#urllib3.connection">urllib3.connection</a>
  &#8226;   <a href="#xmlrpc.client">xmlrpc.client</a>
@@ -13186,20 +13197,29 @@ imported by:
   <a target="code" href="///C:/Users/TRONGTUAN/Documents/2TTS/backend/ipc/handlers.py" type="text/plain"><tt>ipc.handlers</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
-    <a href="#core.config">core.config</a>
+    <a href="#concurrent.futures">concurrent.futures</a>
+ &#8226;   <a href="#core.config">core.config</a>
  &#8226;   <a href="#core.models">core.models</a>
  &#8226;   <a href="#datetime">datetime</a>
  &#8226;   <a href="#ipc">ipc</a>
  &#8226;   <a href="#ipc.server">ipc.server</a>
  &#8226;   <a href="#ipc.types">ipc.types</a>
  &#8226;   <a href="#json">json</a>
+ &#8226;   <a href="#langdetect">langdetect</a>
  &#8226;   <a href="#os">os</a>
  &#8226;   <a href="#pathlib">pathlib</a>
  &#8226;   <a href="#platform">platform</a>
  &#8226;   <a href="#re">re</a>
+ &#8226;   <a href="#requests">requests</a>
+ &#8226;   <a href="#services.analytics">services.analytics</a>
  &#8226;   <a href="#services.audio">services.audio</a>
+ &#8226;   <a href="#services.audio_processor">services.audio_processor</a>
  &#8226;   <a href="#services.elevenlabs">services.elevenlabs</a>
  &#8226;   <a href="#services.file_import">services.file_import</a>
+ &#8226;   <a href="#services.localization">services.localization</a>
+ &#8226;   <a href="#services.pause_preprocessor">services.pause_preprocessor</a>
+ &#8226;   <a href="#services.preset_manager">services.preset_manager</a>
+ &#8226;   <a href="#services.voice_matcher">services.voice_matcher</a>
  &#8226;   <a href="#sys">sys</a>
  &#8226;   <a href="#typing">typing</a>
  &#8226;   <a href="#uuid">uuid</a>
@@ -13337,7 +13357,11 @@ imported by:
  &#8226;   <a href="#langdetect.detector_factory">langdetect.detector_factory</a>
  &#8226;   <a href="#pydub.utils">pydub.utils</a>
  &#8226;   <a href="#requests.compat">requests.compat</a>
+ &#8226;   <a href="#services.analytics">services.analytics</a>
+ &#8226;   <a href="#services.audio_processor">services.audio_processor</a>
  &#8226;   <a href="#services.elevenlabs">services.elevenlabs</a>
+ &#8226;   <a href="#services.localization">services.localization</a>
+ &#8226;   <a href="#services.preset_manager">services.preset_manager</a>
  &#8226;   <a href="#urllib3._request_methods">urllib3._request_methods</a>
  &#8226;   <a href="#urllib3.response">urllib3.response</a>
 
@@ -13427,7 +13451,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#langdetect.detector">langdetect.detector</a>
+    <a href="#ipc.handlers">ipc.handlers</a>
+ &#8226;   <a href="#langdetect.detector">langdetect.detector</a>
  &#8226;   <a href="#langdetect.detector_factory">langdetect.detector_factory</a>
  &#8226;   <a href="#langdetect.lang_detect_exception">langdetect.lang_detect_exception</a>
  &#8226;   <a href="#langdetect.language">langdetect.language</a>
@@ -15502,7 +15527,7 @@ imported by:
   <a target="code" href="" type="text/plain"><tt>org</tt></a>
 <span class="moduletype">MissingModule</span>  <div class="import">
 imported by:
-    <a href="#pickle">pickle</a>
+    <a href="#copy">copy</a>
 
   </div>
 
@@ -15624,9 +15649,12 @@ imported by:
  &#8226;   <a href="#requests.sessions">requests.sessions</a>
  &#8226;   <a href="#requests.utils">requests.utils</a>
  &#8226;   <a href="#runpy">runpy</a>
+ &#8226;   <a href="#services.analytics">services.analytics</a>
  &#8226;   <a href="#services.audio">services.audio</a>
+ &#8226;   <a href="#services.audio_processor">services.audio_processor</a>
  &#8226;   <a href="#services.elevenlabs">services.elevenlabs</a>
  &#8226;   <a href="#services.file_import">services.file_import</a>
+ &#8226;   <a href="#services.preset_manager">services.preset_manager</a>
  &#8226;   <a href="#shlex">shlex</a>
  &#8226;   <a href="#shutil">shutil</a>
  &#8226;   <a href="#socket">socket</a>
@@ -15715,9 +15743,13 @@ imported by:
  &#8226;   <a href="#importlib.resources">importlib.resources</a>
  &#8226;   <a href="#ipc.handlers">ipc.handlers</a>
  &#8226;   <a href="#main.py">main.py</a>
+ &#8226;   <a href="#services.analytics">services.analytics</a>
  &#8226;   <a href="#services.audio">services.audio</a>
+ &#8226;   <a href="#services.audio_processor">services.audio_processor</a>
  &#8226;   <a href="#services.elevenlabs">services.elevenlabs</a>
  &#8226;   <a href="#services.file_import">services.file_import</a>
+ &#8226;   <a href="#services.localization">services.localization</a>
+ &#8226;   <a href="#services.preset_manager">services.preset_manager</a>
  &#8226;   <a href="#zipimport">zipimport</a>
 
   </div>
@@ -15777,14 +15809,14 @@ imported by:
   <a target="code" href="///C:/Users/TRONGTUAN/miniconda3/lib/pickle.py" type="text/plain"><tt>pickle</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
-    <a href="#_compat_pickle">_compat_pickle</a>
+    <a href="#'org.python'">'org.python'</a>
+ &#8226;   <a href="#_compat_pickle">_compat_pickle</a>
  &#8226;   <a href="#_pickle">_pickle</a>
  &#8226;   <a href="#codecs">codecs</a>
  &#8226;   <a href="#copyreg">copyreg</a>
  &#8226;   <a href="#functools">functools</a>
  &#8226;   <a href="#io">io</a>
  &#8226;   <a href="#itertools">itertools</a>
- &#8226;   <a href="#org">org</a>
  &#8226;   <a href="#pprint">pprint</a>
  &#8226;   <a href="#re">re</a>
  &#8226;   <a href="#struct">struct</a>
@@ -16496,6 +16528,7 @@ imported by:
  &#8226;   <a href="#email.utils">email.utils</a>
  &#8226;   <a href="#langdetect.detector">langdetect.detector</a>
  &#8226;   <a href="#secrets">secrets</a>
+ &#8226;   <a href="#services.voice_matcher">services.voice_matcher</a>
  &#8226;   <a href="#statistics">statistics</a>
  &#8226;   <a href="#tempfile">tempfile</a>
  &#8226;   <a href="#urllib3.util.retry">urllib3.util.retry</a>
@@ -16603,6 +16636,8 @@ imported by:
  &#8226;   <a href="#requests.auth">requests.auth</a>
  &#8226;   <a href="#requests.utils">requests.utils</a>
  &#8226;   <a href="#services.file_import">services.file_import</a>
+ &#8226;   <a href="#services.pause_preprocessor">services.pause_preprocessor</a>
+ &#8226;   <a href="#services.voice_matcher">services.voice_matcher</a>
  &#8226;   <a href="#shlex">shlex</a>
  &#8226;   <a href="#soupsieve.__meta__">soupsieve.__meta__</a>
  &#8226;   <a href="#soupsieve.css_match">soupsieve.css_match</a>
@@ -16696,7 +16731,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#main.py">main.py</a>
+    <a href="#ipc.handlers">ipc.handlers</a>
+ &#8226;   <a href="#main.py">main.py</a>
  &#8226;   <a href="#requests">requests</a>
  &#8226;   <a href="#requests.__version__">requests.__version__</a>
  &#8226;   <a href="#requests._internal_utils">requests._internal_utils</a>
@@ -17228,9 +17264,40 @@ imported by:
 <span class="moduletype">Package</span>  <div class="import">
 imported by:
     <a href="#main.py">main.py</a>
+ &#8226;   <a href="#services.analytics">services.analytics</a>
  &#8226;   <a href="#services.audio">services.audio</a>
+ &#8226;   <a href="#services.audio_processor">services.audio_processor</a>
  &#8226;   <a href="#services.elevenlabs">services.elevenlabs</a>
  &#8226;   <a href="#services.file_import">services.file_import</a>
+ &#8226;   <a href="#services.localization">services.localization</a>
+ &#8226;   <a href="#services.pause_preprocessor">services.pause_preprocessor</a>
+ &#8226;   <a href="#services.preset_manager">services.preset_manager</a>
+ &#8226;   <a href="#services.voice_matcher">services.voice_matcher</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="services.analytics"></a>
+  <a target="code" href="///C:/Users/TRONGTUAN/Documents/2TTS/app/services/analytics.py" type="text/plain"><tt>services.analytics</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#collections">collections</a>
+ &#8226;   <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#json">json</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#services">services</a>
+ &#8226;   <a href="#threading">threading</a>
+ &#8226;   <a href="#typing">typing</a>
+ &#8226;   <a href="#uuid">uuid</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#ipc.handlers">ipc.handlers</a>
 
   </div>
 
@@ -17254,6 +17321,30 @@ imports:
 imported by:
     <a href="#ipc.handlers">ipc.handlers</a>
  &#8226;   <a href="#main.py">main.py</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="services.audio_processor"></a>
+  <a target="code" href="///C:/Users/TRONGTUAN/Documents/2TTS/app/services/audio_processor.py" type="text/plain"><tt>services.audio_processor</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#json">json</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#services">services</a>
+ &#8226;   <a href="#shutil">shutil</a>
+ &#8226;   <a href="#subprocess">subprocess</a>
+ &#8226;   <a href="#tempfile">tempfile</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#ipc.handlers">ipc.handlers</a>
 
   </div>
 
@@ -17310,6 +17401,89 @@ imported by:
 </div>
 
 <div class="node">
+  <a name="services.localization"></a>
+  <a target="code" href="///C:/Users/TRONGTUAN/Documents/2TTS/app/services/localization.py" type="text/plain"><tt>services.localization</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#json">json</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#services">services</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#ipc.handlers">ipc.handlers</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="services.pause_preprocessor"></a>
+  <a target="code" href="///C:/Users/TRONGTUAN/Documents/2TTS/app/services/pause_preprocessor.py" type="text/plain"><tt>services.pause_preprocessor</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#re">re</a>
+ &#8226;   <a href="#services">services</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#ipc.handlers">ipc.handlers</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="services.preset_manager"></a>
+  <a target="code" href="///C:/Users/TRONGTUAN/Documents/2TTS/app/services/preset_manager.py" type="text/plain"><tt>services.preset_manager</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#core.models">core.models</a>
+ &#8226;   <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#json">json</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#services">services</a>
+ &#8226;   <a href="#typing">typing</a>
+ &#8226;   <a href="#uuid">uuid</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#ipc.handlers">ipc.handlers</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="services.voice_matcher"></a>
+  <a target="code" href="///C:/Users/TRONGTUAN/Documents/2TTS/app/services/voice_matcher.py" type="text/plain"><tt>services.voice_matcher</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#core.models">core.models</a>
+ &#8226;   <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#random">random</a>
+ &#8226;   <a href="#re">re</a>
+ &#8226;   <a href="#services">services</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#ipc.handlers">ipc.handlers</a>
+
+  </div>
+
+</div>
+
+<div class="node">
   <a name="shlex"></a>
   <a target="code" href="///C:/Users/TRONGTUAN/miniconda3/lib/shlex.py" type="text/plain"><tt>shlex</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
@@ -17359,6 +17533,7 @@ imported by:
     <a href="#argparse">argparse</a>
  &#8226;   <a href="#http.server">http.server</a>
  &#8226;   <a href="#multiprocessing.util">multiprocessing.util</a>
+ &#8226;   <a href="#services.audio_processor">services.audio_processor</a>
  &#8226;   <a href="#tarfile">tarfile</a>
  &#8226;   <a href="#tempfile">tempfile</a>
  &#8226;   <a href="#uuid">uuid</a>
@@ -18030,6 +18205,7 @@ imported by:
  &#8226;   <a href="#pydub.utils">pydub.utils</a>
  &#8226;   <a href="#pyi_rth_multiprocessing.py">pyi_rth_multiprocessing.py</a>
  &#8226;   <a href="#services.audio">services.audio</a>
+ &#8226;   <a href="#services.audio_processor">services.audio_processor</a>
  &#8226;   <a href="#uuid">uuid</a>
  &#8226;   <a href="#webbrowser">webbrowser</a>
 
@@ -18301,6 +18477,7 @@ imported by:
  &#8226;   <a href="#pydub.audio_segment">pydub.audio_segment</a>
  &#8226;   <a href="#pydub.utils">pydub.utils</a>
  &#8226;   <a href="#requests.utils">requests.utils</a>
+ &#8226;   <a href="#services.audio_processor">services.audio_processor</a>
  &#8226;   <a href="#urllib.request">urllib.request</a>
  &#8226;   <a href="#urllib.response">urllib.response</a>
  &#8226;   <a href="#webbrowser">webbrowser</a>
@@ -18389,6 +18566,7 @@ imported by:
  &#8226;   <a href="#queue">queue</a>
  &#8226;   <a href="#requests.auth">requests.auth</a>
  &#8226;   <a href="#requests.cookies">requests.cookies</a>
+ &#8226;   <a href="#services.analytics">services.analytics</a>
  &#8226;   <a href="#socketserver">socketserver</a>
  &#8226;   <a href="#subprocess">subprocess</a>
  &#8226;   <a href="#urllib3._collections">urllib3._collections</a>
@@ -18772,9 +18950,15 @@ imported by:
  &#8226;   <a href="#ipc.handlers">ipc.handlers</a>
  &#8226;   <a href="#ipc.server">ipc.server</a>
  &#8226;   <a href="#ipc.types">ipc.types</a>
+ &#8226;   <a href="#services.analytics">services.analytics</a>
  &#8226;   <a href="#services.audio">services.audio</a>
+ &#8226;   <a href="#services.audio_processor">services.audio_processor</a>
  &#8226;   <a href="#services.elevenlabs">services.elevenlabs</a>
  &#8226;   <a href="#services.file_import">services.file_import</a>
+ &#8226;   <a href="#services.localization">services.localization</a>
+ &#8226;   <a href="#services.pause_preprocessor">services.pause_preprocessor</a>
+ &#8226;   <a href="#services.preset_manager">services.preset_manager</a>
+ &#8226;   <a href="#services.voice_matcher">services.voice_matcher</a>
  &#8226;   <a href="#soupsieve">soupsieve</a>
  &#8226;   <a href="#soupsieve.css_match">soupsieve.css_match</a>
  &#8226;   <a href="#soupsieve.css_parser">soupsieve.css_parser</a>
@@ -20219,6 +20403,8 @@ imports:
 imported by:
     <a href="#core.models">core.models</a>
  &#8226;   <a href="#ipc.handlers">ipc.handlers</a>
+ &#8226;   <a href="#services.analytics">services.analytics</a>
+ &#8226;   <a href="#services.preset_manager">services.preset_manager</a>
 
   </div>
 

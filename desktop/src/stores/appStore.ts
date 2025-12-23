@@ -66,6 +66,7 @@ interface AppState {
   setDefaultVoice: (id: string | null, name: string | null) => void;
 
   // Lines actions
+  setLines: (lines: TextLine[]) => void;
   addLines: (texts: string[], sourceFile?: string) => void;
   updateLine: (id: string, updates: Partial<TextLine>) => void;
   updateLineStatus: (id: string, status: LineStatus, error?: string) => void;
@@ -175,6 +176,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setDefaultVoice: (id, name) => set({ defaultVoiceId: id, defaultVoiceName: name }),
 
   // Lines actions
+  setLines: (lines) => set({ lines, selectedLineIds: new Set() }),
+
   addLines: (texts, sourceFile) =>
     set((state) => {
       const startIndex = state.lines.length;

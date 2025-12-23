@@ -7,8 +7,10 @@ import TranscribePage from './pages/TranscribePage';
 import { useAppStore } from './stores/appStore';
 import { ipcClient } from './lib/ipc';
 import { getPlatformAPI } from './lib/platform';
+import { updateManager, UpdateState } from './lib/updater';
 import SplashScreen from './components/SplashScreen';
 import ErrorScreen from './components/ErrorScreen';
+import UpdateDialog from './components/UpdateDialog';
 
 interface DebugInfo {
   isDev: boolean;
@@ -24,7 +26,13 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
+  const [updateState, setUpdateState] = useState<UpdateState>(updateManager.getState());
   const { setBackendReady, setVersionInfo } = useAppStore();
+
+  // Subscribe to update manager
+  useEffect(() => {
+    return updateManager.subscribe(setUpdateState);
+  }, []);
 
   useEffect(() => {
     let unsubDebug: (() => void) | undefined;
@@ -63,6 +71,11 @@ function App() {
         setBackendReady(true);
         setIsLoading(false);
         console.log('[App] Initialization complete');
+        
+        // Check for updates silently after startup
+        setTimeout(() => {
+          updateManager.checkForUpdates(true).catch(console.error);
+        }, 3000);
       } catch (err) {
         console.error('[App] Initialization error:', err);
         const message = err instanceof Error ? err.message : 'Failed to connect to backend';
@@ -88,13 +101,25 @@ function App() {
   }
 
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<TTSPage />} />
-        <Route path="/transcribe" element={<TranscribePage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-      </Routes>
-    </Layout>
+    <>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<TTSPage />} />
+          <Route path="/transcribe" element={<TranscribePage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Routes>
+      </Layout>
+
+      {/* Update Dialog */}
+      <UpdateDialog
+        isOpen={updateState.available}
+        updateInfo={updateState.updateInfo}
+        onClose={() => updateManager.dismiss()}
+        onUpdate={() => updateManager.downloadAndInstall()}
+        isDownloading={updateState.downloading}
+        downloadProgress={updateState.progress}
+      />
+    </>
   );
 }
 

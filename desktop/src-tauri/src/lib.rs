@@ -204,6 +204,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_focus();
@@ -258,6 +260,8 @@ pub fn run() {
             commands::window_minimize,
             commands::window_maximize,
             commands::window_close,
+            commands::write_text_file,
+            commands::read_text_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

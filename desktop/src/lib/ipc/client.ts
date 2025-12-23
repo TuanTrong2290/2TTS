@@ -7,12 +7,13 @@ import {
   TTSJobResult,
   ConfigResult,
   APIKey,
+  APIKeyStatus,
   Proxy,
   ProgressEvent,
 } from './types';
 import { getPlatformAPI } from '../platform';
 
-const UI_VERSION = '1.0.8';
+const UI_VERSION = '1.2.4';
 const PROTOCOL_VERSION = 1;
 const DEFAULT_TIMEOUT = 30000;
 
@@ -135,6 +136,10 @@ class IPCClient {
     return this.call<APIKey>('apikeys.validate', { id });
   }
 
+  async getAPIKeyStatus(): Promise<APIKeyStatus> {
+    return this.call<APIKeyStatus>('apikeys.status');
+  }
+
   async getProxies(): Promise<Proxy[]> {
     return this.call<Proxy[]>('proxies.list');
   }
@@ -252,12 +257,318 @@ class IPCClient {
     return this.on('event.credits_update', callback);
   }
 
+  // ============================================
+  // TRANSCRIPTION (Speech-to-Text) METHODS
+  // ============================================
+
+  async startTranscription(params: {
+    file_path: string;
+    language?: string;
+    diarize?: boolean;
+    num_speakers?: number;
+  }): Promise<TranscriptionResult> {
+    return this.call<TranscriptionResult>('transcription.start', params, 600000);
+  }
+
+  async getTranscriptionFormats(): Promise<{ audio: string[]; video: string[] }> {
+    return this.call('transcription.supported_formats');
+  }
+
+  // ============================================
+  // VOICE PRESETS METHODS
+  // ============================================
+
+  async getPresets(): Promise<VoicePreset[]> {
+    return this.call<VoicePreset[]>('presets.list');
+  }
+
+  async savePreset(preset: {
+    name: string;
+    voice_id: string;
+    voice_name?: string;
+    settings?: VoiceSettingsParams;
+    description?: string;
+    tags?: string[];
+  }): Promise<VoicePreset> {
+    return this.call<VoicePreset>('presets.save', preset);
+  }
+
+  async deletePreset(id: string): Promise<void> {
+    return this.call<void>('presets.delete', { id });
+  }
+
+  // ============================================
+  // VOICE MATCHER METHODS
+  // ============================================
+
+  async getVoicePatterns(): Promise<VoicePattern[]> {
+    return this.call<VoicePattern[]>('voicematcher.patterns.list');
+  }
+
+  async addVoicePattern(pattern: {
+    name: string;
+    pattern: string;
+    voice_id: string;
+    voice_name?: string;
+    match_type?: 'contains' | 'starts_with' | 'ends_with' | 'exact' | 'regex';
+    case_sensitive?: boolean;
+    priority?: number;
+  }): Promise<VoicePattern> {
+    return this.call<VoicePattern>('voicematcher.patterns.add', pattern);
+  }
+
+  async deleteVoicePattern(id: string): Promise<void> {
+    return this.call<void>('voicematcher.patterns.delete', { id });
+  }
+
+  async matchVoice(text: string): Promise<VoiceMatchResult> {
+    return this.call<VoiceMatchResult>('voicematcher.match', { text });
+  }
+
+  async batchMatchVoices(lines: Array<{ id: string; text: string }>): Promise<Array<{
+    id: string;
+    matched: boolean;
+    voice_id?: string;
+    voice_name?: string;
+  }>> {
+    return this.call('voicematcher.batch_match', { lines });
+  }
+
+  // ============================================
+  // PAUSE PREPROCESSOR METHODS
+  // ============================================
+
+  async processPauses(text: string, settings?: PauseSettings): Promise<{ original: string; processed: string }> {
+    return this.call('pause.process', { text, settings });
+  }
+
+  async batchProcessPauses(lines: Array<{ id: string; text: string }>, settings?: PauseSettings): Promise<Array<{
+    id: string;
+    original: string;
+    processed: string;
+  }>> {
+    return this.call('pause.batch_process', { lines, settings });
+  }
+
+  // ============================================
+  // AUDIO POST-PROCESSING METHODS
+  // ============================================
+
+  async processAudio(inputPath: string, outputPath: string, settings: AudioProcessingSettings): Promise<{
+    success: boolean;
+    output_path: string;
+  }> {
+    return this.call('audio.process', {
+      input_path: inputPath,
+      output_path: outputPath,
+      settings,
+    }, 300000);
+  }
+
+  async batchProcessAudio(files: Array<{ input_path: string; output_path: string }>, settings: AudioProcessingSettings): Promise<{
+    total: number;
+    success: number;
+    failed: number;
+    results: Array<{ input_path: string; output_path: string; success: boolean; message: string }>;
+  }> {
+    return this.call('audio.batch_process', { files, settings }, 600000);
+  }
+
+  // ============================================
+  // ANALYTICS METHODS
+  // ============================================
+
+  async getAnalytics(): Promise<AnalyticsStats> {
+    return this.call<AnalyticsStats>('analytics.get_stats');
+  }
+
+  async trackUsage(characters: number, lines: number, voiceId?: string): Promise<void> {
+    return this.call<void>('analytics.track_usage', { characters, lines, voice_id: voiceId });
+  }
+
+  async resetAnalytics(): Promise<void> {
+    return this.call<void>('analytics.reset');
+  }
+
+  // ============================================
+  // PROXY MANAGEMENT METHODS (extended)
+  // ============================================
+
+  async assignProxyToKey(keyId: string, proxyId: string | null): Promise<void> {
+    return this.call<void>('proxies.assign_to_key', { key_id: keyId, proxy_id: proxyId });
+  }
+
+  // ============================================
+  // VOICE LIBRARY METHODS
+  // ============================================
+
+  async searchVoices(params: {
+    query?: string;
+    category?: string;
+    gender?: string;
+    language?: string;
+    use_case?: string;
+  }): Promise<Voice[]> {
+    return this.call<Voice[]>('voices.search', params);
+  }
+
+  async getVoiceDetails(voiceId: string): Promise<VoiceDetails> {
+    return this.call<VoiceDetails>('voices.get_details', { voice_id: voiceId });
+  }
+
+  // ============================================
+  // BATCH TTS (Multi-thread) METHODS
+  // ============================================
+
+  async startBatchTTS(params: {
+    lines: Array<{
+      id: string;
+      text: string;
+      voice_id: string;
+      output_path: string;
+    }>;
+    thread_count?: number;
+    settings?: VoiceSettingsParams;
+  }): Promise<BatchTTSResult> {
+    return this.call<BatchTTSResult>('tts.batch_start', params, 1800000); // 30 min timeout
+  }
+
+  // ============================================
+  // LOCALIZATION METHODS
+  // ============================================
+
+  async getAvailableLanguages(): Promise<Array<{ code: string; name: string }>> {
+    return this.call('i18n.get_languages');
+  }
+
+  async getTranslations(language: string): Promise<Record<string, string>> {
+    return this.call('i18n.get_translations', { language });
+  }
+
+  // ============================================
+  // FILE OPERATIONS
+  // ============================================
+  
+  async readTextFile(path: string): Promise<string> {
+    const api = await getPlatformAPI();
+    return api.invoke('read_text_file', { path });
+  }
+
+  async writeTextFile(path: string, contents: string): Promise<void> {
+    const api = await getPlatformAPI();
+    return api.invoke('write_text_file', { path, contents });
+  }
+
   destroy() {
     if (this.unsubscribe) {
       this.unsubscribe();
     }
     this.eventListeners.clear();
   }
+}
+
+// New types for new features
+export interface TranscriptionResult {
+  job_id: string;
+  text: string;
+  language: string;
+  segments: Array<{
+    start: number;
+    end: number;
+    text: string;
+    speaker?: string;
+  }>;
+  speakers: Array<{ id: string; name: string }>;
+}
+
+export interface VoicePreset {
+  id: string;
+  name: string;
+  voice_id: string;
+  voice_name: string;
+  settings: VoiceSettingsParams;
+  description: string;
+  created_at: string;
+  tags: string[];
+}
+
+export interface VoiceSettingsParams {
+  stability?: number;
+  similarity_boost?: number;
+  style?: number;
+  use_speaker_boost?: boolean;
+  speed?: number;
+}
+
+export interface VoicePattern {
+  id: string;
+  name: string;
+  pattern: string;
+  voice_id: string;
+  voice_name: string;
+  match_type: string;
+  case_sensitive: boolean;
+  priority: number;
+}
+
+export interface VoiceMatchResult {
+  matched: boolean;
+  voice_id?: string;
+  voice_name?: string;
+  pattern_name?: string;
+}
+
+export interface PauseSettings {
+  pause_enabled?: boolean;
+  short_pause_duration?: number;
+  long_pause_duration?: number;
+  short_pause_punctuation?: string;
+  long_pause_punctuation?: string;
+}
+
+export interface AudioProcessingSettings {
+  normalize?: boolean;
+  normalize_level?: number;
+  fade_in?: number;
+  fade_out?: number;
+  silence_padding_start?: number;
+  silence_padding_end?: number;
+  trim_silence?: boolean;
+  trim_threshold?: number;
+  speed?: number;
+  pitch_shift?: number;
+}
+
+export interface AnalyticsStats {
+  total_characters: number;
+  total_lines: number;
+  total_sessions: number;
+  total_processing_time: number;
+  voice_usage: Record<string, number>;
+  daily_usage: Record<string, number>;
+  error_count: number;
+  first_use: string | null;
+  last_use: string | null;
+}
+
+export interface VoiceDetails extends Voice {
+  description: string;
+  settings: VoiceSettingsParams | null;
+}
+
+export interface BatchTTSResult {
+  batch_id: string;
+  total: number;
+  completed: number;
+  failed: number;
+  results: Array<{
+    id: string;
+    success: boolean;
+    output_path?: string;
+    duration_ms?: number;
+    language_code?: string;
+    error?: string;
+  }>;
 }
 
 export class IPCError extends Error {

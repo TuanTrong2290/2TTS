@@ -121,3 +121,13 @@ pub async fn window_close(app: AppHandle) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[tauri::command]
+pub async fn write_text_file(path: String, contents: String) -> Result<(), String> {
+    std::fs::write(&path, contents).map_err(|e| format!("Failed to write file: {}", e))
+}
+
+#[tauri::command]
+pub async fn read_text_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {}", e))
+}

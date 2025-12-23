@@ -1,6 +1,6 @@
 [package]
 name = "tts-app"
-version = "1.0.8"
+version = "1.2.4"
 description = "2TTS - Text to Speech Desktop App"
 authors = ["2TTS"]
 license = "MIT"
@@ -24,6 +24,8 @@ tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tokio = { version = "1", features = ["sync", "rt"] }
 parking_lot = "0.12"
+tauri-plugin-updater = "2.9.0"
+tauri-plugin-process = "2.3.1"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"

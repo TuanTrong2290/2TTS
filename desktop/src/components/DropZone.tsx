@@ -43,7 +43,7 @@ export default function DropZone({ onFilesDropped, compact = false }: DropZonePr
   const handleBrowse = async () => {
     try {
       const api = await getPlatformAPI();
-      const file = await api.dialog.openFile({
+      const files = await api.dialog.openFile({
         title: 'Import Files',
         filters: [
           { name: 'Supported Files', extensions: ['srt', 'txt', 'docx'] },
@@ -52,8 +52,8 @@ export default function DropZone({ onFilesDropped, compact = false }: DropZonePr
           { name: 'Word Documents', extensions: ['docx'] },
         ],
       });
-      if (file) {
-        onFilesDropped([file]);
+      if (files && files.length > 0) {
+        onFilesDropped(files);
       }
     } catch (err) {
       console.error('Failed to open file dialog:', err);

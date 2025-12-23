@@ -1,8 +1,96 @@
+import { useState } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { getPlatformAPI } from '../lib/platform';
+import { ipcClient } from '../lib/ipc';
+import { TextLine } from '../lib/ipc/types';
 
 export default function TitleBar() {
-  const { versionInfo, totalCredits } = useAppStore();
+  const { versionInfo, totalCredits, lines, outputFolder, defaultVoiceId, setLines, setOutputFolder, setDefaultVoice } = useAppStore();
+  const [showProjectMenu, setShowProjectMenu] = useState(false);
+  const [projectName, setProjectName] = useState<string | null>(null);
+
+  const handleSaveProject = async () => {
+    try {
+      const api = await getPlatformAPI();
+      const filePath = await api.dialog.saveFile({
+        title: 'Save Project',
+        defaultPath: projectName || '2tts_project.json',
+        filters: [{ name: 'Project Files', extensions: ['json'] }],
+      });
+      if (!filePath) return;
+      
+      const project = {
+        version: '1.0',
+        savedAt: new Date().toISOString(),
+        outputFolder,
+        defaultVoiceId,
+        lines: lines.map(l => ({
+          id: l.id,
+          index: l.index,
+          text: l.text,
+          voice_id: l.voice_id,
+          voice_name: l.voice_name,
+          status: l.status === 'done' ? 'done' : 'pending',
+          output_path: l.output_path,
+        })),
+      };
+      await ipcClient.writeTextFile(filePath, JSON.stringify(project, null, 2));
+      setProjectName(filePath.split(/[/\\]/).pop()?.replace('.json', '') || null);
+      setShowProjectMenu(false);
+    } catch (err) {
+      console.error('Failed to save project:', err);
+    }
+  };
+
+  const handleLoadProject = async () => {
+    try {
+      const api = await getPlatformAPI();
+      const filePaths = await api.dialog.openFile({
+        title: 'Load Project',
+        filters: [{ name: 'Project Files', extensions: ['json'] }],
+        multiple: false,
+      });
+      if (!filePaths || filePaths.length === 0) return;
+      
+      const content = await ipcClient.readTextFile(filePaths[0]);
+      const project = JSON.parse(content);
+      
+      if (project.outputFolder) setOutputFolder(project.outputFolder);
+      if (project.defaultVoiceId) setDefaultVoice(project.defaultVoiceId, null);
+      if (project.lines) {
+        const loadedLines: TextLine[] = project.lines.map((l: { id?: string; index?: number; text: string; voice_id?: string; voice_name?: string; status?: string; output_path?: string }, i: number) => ({
+          id: l.id || crypto.randomUUID(),
+          index: l.index ?? i,
+          text: l.text,
+          original_text: l.text,
+          voice_id: l.voice_id || null,
+          voice_name: l.voice_name || null,
+          status: (l.status === 'done' ? 'done' : 'pending') as TextLine['status'],
+          error_message: null,
+          source_file: null,
+          start_time: null,
+          end_time: null,
+          audio_duration: null,
+          output_path: l.output_path || null,
+          retry_count: 0,
+          detected_language: null,
+          model_id: null,
+        }));
+        setLines(loadedLines);
+      }
+      setProjectName(filePaths[0].split(/[/\\]/).pop()?.replace('.json', '') || null);
+      setShowProjectMenu(false);
+    } catch (err) {
+      console.error('Failed to load project:', err);
+    }
+  };
+
+  const handleNewProject = () => {
+    setLines([]);
+    setOutputFolder('');
+    setProjectName(null);
+    setShowProjectMenu(false);
+  };
 
   const handleMinimize = async () => {
     const api = await getPlatformAPI();
@@ -27,6 +115,48 @@ export default function TitleBar() {
         {versionInfo && (
           <span className="text-xs text-surface-500">v{versionInfo.uiVersion}</span>
         )}
+        
+        {/* Project Menu */}
+        <div className="relative ml-4">
+          <button
+            onClick={() => setShowProjectMenu(!showProjectMenu)}
+            className="flex items-center gap-1 px-2 py-1 text-sm text-surface-300 hover:text-surface-100 hover:bg-surface-800 rounded transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            <span>{projectName || 'Project'}</span>
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          
+          {showProjectMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowProjectMenu(false)} />
+              <div className="absolute top-full left-0 mt-1 w-40 py-1 bg-surface-800 border border-surface-700 rounded-lg shadow-lg z-50">
+                <button
+                  onClick={handleNewProject}
+                  className="w-full px-3 py-2 text-left text-sm text-surface-300 hover:bg-surface-700 hover:text-surface-100"
+                >
+                  New Project
+                </button>
+                <button
+                  onClick={handleLoadProject}
+                  className="w-full px-3 py-2 text-left text-sm text-surface-300 hover:bg-surface-700 hover:text-surface-100"
+                >
+                  Open Project...
+                </button>
+                <button
+                  onClick={handleSaveProject}
+                  className="w-full px-3 py-2 text-left text-sm text-surface-300 hover:bg-surface-700 hover:text-surface-100"
+                >
+                  Save Project...
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-4">
