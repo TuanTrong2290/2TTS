@@ -5,9 +5,22 @@ import { ipcClient } from '../lib/ipc';
 import { TextLine } from '../lib/ipc/types';
 
 export default function TitleBar() {
-  const { versionInfo, totalCredits, lines, outputFolder, defaultVoiceId, setLines, setOutputFolder, setDefaultVoice } = useAppStore();
+  const { versionInfo, totalCredits, setTotalCredits, lines, outputFolder, defaultVoiceId, setLines, setOutputFolder, setDefaultVoice } = useAppStore();
   const [showProjectMenu, setShowProjectMenu] = useState(false);
   const [projectName, setProjectName] = useState<string | null>(null);
+  const [isRefreshingCredits, setIsRefreshingCredits] = useState(false);
+
+  const handleRefreshCredits = async () => {
+    setIsRefreshingCredits(true);
+    try {
+      const credits = await ipcClient.getCredits();
+      setTotalCredits(credits);
+    } catch (err) {
+      console.error('Failed to refresh credits:', err);
+    } finally {
+      setIsRefreshingCredits(false);
+    }
+  };
 
   const handleSaveProject = async () => {
     try {
@@ -106,7 +119,7 @@ export default function TitleBar() {
   };
 
   return (
-    <div className="h-10 bg-surface-900 border-b border-surface-800 flex items-center justify-between px-4 drag-region select-none">
+    <div className="h-10 bg-surface-900/80 backdrop-blur-sm border-b border-surface-800 flex items-center justify-between px-4 drag-region select-none">
       <div className="flex items-center gap-3 no-drag">
         <div className="w-6 h-6 rounded-lg bg-primary-600 flex items-center justify-center">
           <span className="text-xs font-bold text-white">2T</span>
@@ -178,6 +191,16 @@ export default function TitleBar() {
             <span className="text-sm font-medium text-surface-200">
               {totalCredits.toLocaleString()}
             </span>
+            <button
+              onClick={handleRefreshCredits}
+              disabled={isRefreshingCredits}
+              className="p-0.5 text-surface-500 hover:text-surface-300 transition-colors disabled:opacity-50"
+              title="Refresh credits"
+            >
+              <svg className={`w-3.5 h-3.5 ${isRefreshingCredits ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
           </div>
         </div>
 

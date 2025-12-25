@@ -1,6 +1,6 @@
 {
   "name": "2tts-desktop",
-  "version": "1.2.4",
+  "version": "1.4.6",
   "private": true,
   "scripts": {
     "dev": "tauri dev",

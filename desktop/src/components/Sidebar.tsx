@@ -1,10 +1,11 @@
 import { NavLink } from 'react-router-dom';
 import { useAppStore } from '../stores/appStore';
+import { useTranslation } from '../lib/i18n';
 
 const navItems = [
   {
     path: '/',
-    label: 'Text to Speech',
+    labelKey: 'nav.tts',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path
@@ -18,7 +19,7 @@ const navItems = [
   },
   {
     path: '/transcribe',
-    label: 'Transcribe',
+    labelKey: 'nav.transcribe',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path
@@ -32,7 +33,7 @@ const navItems = [
   },
   {
     path: '/settings',
-    label: 'Settings',
+    labelKey: 'nav.settings',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path
@@ -54,10 +55,11 @@ const navItems = [
 
 export default function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useAppStore();
+  const { t } = useTranslation();
 
   return (
     <aside
-      className={`fixed left-0 top-10 bottom-0 bg-surface-900 border-r border-surface-800 flex flex-col transition-all duration-200 z-10 ${
+      className={`fixed left-0 top-10 bottom-0 bg-surface-900/80 backdrop-blur-sm border-r border-surface-800 flex flex-col transition-all duration-200 z-10 ${
         sidebarCollapsed ? 'w-16' : 'w-64'
       }`}
     >
@@ -71,10 +73,10 @@ export default function Sidebar() {
                 sidebarCollapsed ? 'justify-center' : ''
               }`
             }
-            title={sidebarCollapsed ? item.label : undefined}
+            title={sidebarCollapsed ? t(item.labelKey) : undefined}
           >
             {item.icon}
-            {!sidebarCollapsed && <span>{item.label}</span>}
+            {!sidebarCollapsed && <span>{t(item.labelKey)}</span>}
           </NavLink>
         ))}
       </nav>

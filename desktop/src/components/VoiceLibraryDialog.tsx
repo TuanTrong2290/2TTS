@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ipcClient } from '../lib/ipc';
 import { Voice } from '../lib/ipc/types';
 
@@ -15,6 +15,7 @@ export default function VoiceLibraryDialog({
 }: VoiceLibraryDialogProps) {
   const [voices, setVoices] = useState<Voice[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({
     category: '',
@@ -22,41 +23,106 @@ export default function VoiceLibraryDialog({
     language: '',
   });
   const [previewingId, setPreviewingId] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const searchVoices = useCallback(async () => {
-    setIsLoading(true);
+  const PAGE_SIZE = 30;
+
+  const searchVoices = useCallback(async (page = 0, append = false) => {
+    if (page === 0) {
+      setIsLoading(true);
+    } else {
+      setIsLoadingMore(true);
+    }
+    
     try {
       const results = await ipcClient.searchVoices({
         query: searchQuery || undefined,
         category: filters.category || undefined,
         gender: filters.gender || undefined,
         language: filters.language || undefined,
+        page_size: PAGE_SIZE,
+        page,
       });
-      setVoices(results);
+      
+      if (append) {
+        setVoices(prev => [...prev, ...results.voices]);
+      } else {
+        setVoices(results.voices);
+      }
+      setHasMore(results.has_more);
+      setTotalCount(results.total_count);
+      setCurrentPage(results.page);
     } catch (err) {
       console.error('Failed to search voices:', err);
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
   }, [searchQuery, filters]);
 
+  const handleLoadMore = () => {
+    searchVoices(currentPage + 1, true);
+  };
+
   useEffect(() => {
     if (isOpen) {
-      searchVoices();
+      setCurrentPage(0);
+      searchVoices(0, false);
+    } else {
+      // Clean up audio when dialog closes
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      setPreviewingId(null);
     }
-  }, [isOpen, searchVoices]);
+  }, [isOpen]);
+
+  // Reset and search when filters change
+  useEffect(() => {
+    if (isOpen) {
+      setCurrentPage(0);
+      searchVoices(0, false);
+    }
+  }, [filters]);
 
   const handlePreview = async (voice: Voice) => {
     if (!voice.preview_url) return;
+    
+    // If same voice is playing, pause it
+    if (previewingId === voice.voice_id && audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+      setPreviewingId(null);
+      return;
+    }
+    
+    // Stop any currently playing audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    
     setPreviewingId(voice.voice_id);
     try {
       const audio = new Audio(voice.preview_url);
-      audio.onended = () => setPreviewingId(null);
-      audio.onerror = () => setPreviewingId(null);
+      audioRef.current = audio;
+      audio.onended = () => {
+        setPreviewingId(null);
+        audioRef.current = null;
+      };
+      audio.onerror = () => {
+        setPreviewingId(null);
+        audioRef.current = null;
+      };
       await audio.play();
     } catch (err) {
       console.error('Failed to play preview:', err);
       setPreviewingId(null);
+      audioRef.current = null;
     }
   };
 
@@ -121,7 +187,10 @@ export default function VoiceLibraryDialog({
               <option value="fr">French</option>
               <option value="de">German</option>
             </select>
-            <button onClick={searchVoices} className="btn-secondary text-sm px-4">
+            <button 
+              onClick={() => { setCurrentPage(0); searchVoices(0, false); }} 
+              className="btn-secondary text-sm px-4"
+            >
               Search
             </button>
           </div>
@@ -140,6 +209,7 @@ export default function VoiceLibraryDialog({
           ) : voices.length === 0 ? (
             <div className="text-center py-8 text-surface-500">No voices found</div>
           ) : (
+            <>
             <div className="grid grid-cols-2 gap-3">
               {voices.map((voice) => (
                 <div
@@ -196,11 +266,45 @@ export default function VoiceLibraryDialog({
                 </div>
               ))}
             </div>
+
+            {/* Load More Button */}
+            {hasMore && (
+              <div className="flex justify-center pt-4">
+                <button
+                  onClick={handleLoadMore}
+                  disabled={isLoadingMore}
+                  className="px-6 py-2 bg-surface-800 hover:bg-surface-700 text-surface-300 rounded-lg text-sm transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isLoadingMore ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                      Load More
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+            </>
           )}
         </div>
 
-        <div className="px-4 py-3 border-t border-surface-700 shrink-0 text-xs text-surface-500">
-          {voices.length} voice{voices.length !== 1 ? 's' : ''} found
+        <div className="px-4 py-3 border-t border-surface-700 shrink-0 text-xs text-surface-500 flex items-center justify-between">
+          <span>
+            Showing {voices.length}{totalCount > 0 ? ` of ${totalCount.toLocaleString()}` : ''} voice{voices.length !== 1 ? 's' : ''}
+          </span>
+          {hasMore && (
+            <span className="text-primary-400">More available</span>
+          )}
         </div>
       </div>
     </div>

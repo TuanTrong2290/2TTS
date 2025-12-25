@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { TextLine, LineStatus, Voice } from '../lib/ipc/types';
+import { useTranslation } from '../lib/i18n';
 
 interface LineTableProps {
   lines: TextLine[];
@@ -11,13 +12,14 @@ interface LineTableProps {
   onDelete: (ids: string[]) => void;
   onRetry: (ids: string[]) => void;
   onPlayAudio: (id: string) => void;
+  onReorder?: (fromIndex: number, toIndex: number) => void;
 }
 
-const STATUS_CONFIG: Record<LineStatus, { label: string; color: string; icon: string }> = {
-  pending: { label: 'Pending', color: 'text-surface-400', icon: '○' },
-  processing: { label: 'Processing', color: 'text-yellow-400', icon: '◐' },
-  done: { label: 'Done', color: 'text-green-400', icon: '✓' },
-  error: { label: 'Error', color: 'text-red-400', icon: '✗' },
+const STATUS_CONFIG: Record<LineStatus, { labelKey: string; color: string; icon: string }> = {
+  pending: { labelKey: 'status.pending', color: 'text-surface-400', icon: '○' },
+  processing: { labelKey: 'status.processing', color: 'text-yellow-400', icon: '◐' },
+  done: { labelKey: 'status.done', color: 'text-green-400', icon: '✓' },
+  error: { labelKey: 'status.error', color: 'text-red-400', icon: '✗' },
 };
 
 export default function LineTable({
@@ -30,9 +32,14 @@ export default function LineTable({
   onDelete,
   onRetry,
   onPlayAudio,
+  onReorder,
 }: LineTableProps) {
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const { t } = useTranslation();
+  const [editingLine, setEditingLine] = useState<TextLine | null>(null);
   const [editText, setEditText] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const handleSelectAll = useCallback((checked: boolean) => {
     if (checked) {
@@ -53,31 +60,39 @@ export default function LineTable({
   }, [selectedIds, onSelectionChange]);
 
   const handleDoubleClick = useCallback((line: TextLine) => {
-    setEditingId(line.id);
+    setEditingLine(line);
     setEditText(line.text);
   }, []);
 
   const handleEditSubmit = useCallback(() => {
-    if (editingId && editText.trim()) {
-      onTextEdit(editingId, editText.trim());
+    if (editingLine && editText.trim()) {
+      onTextEdit(editingLine.id, editText.trim());
     }
-    setEditingId(null);
+    setEditingLine(null);
     setEditText('');
-  }, [editingId, editText, onTextEdit]);
+  }, [editingLine, editText, onTextEdit]);
 
   const handleEditCancel = useCallback(() => {
-    setEditingId(null);
+    setEditingLine(null);
     setEditText('');
   }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && e.ctrlKey) {
       e.preventDefault();
       handleEditSubmit();
     } else if (e.key === 'Escape') {
       handleEditCancel();
     }
   }, [handleEditSubmit, handleEditCancel]);
+
+  // Focus textarea when edit panel opens
+  useEffect(() => {
+    if (editingLine && textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.setSelectionRange(editText.length, editText.length);
+    }
+  }, [editingLine]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, line: TextLine) => {
     e.preventDefault();
@@ -86,6 +101,38 @@ export default function LineTable({
       onSelectionChange(new Set([line.id]));
     }
   }, [selectedIds, onSelectionChange]);
+
+  // Drag and drop handlers
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index.toString());
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverIndex(null);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, toIndex: number) => {
+    e.preventDefault();
+    const fromIndex = draggedIndex;
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+    if (fromIndex !== null && fromIndex !== toIndex && onReorder) {
+      onReorder(fromIndex, toIndex);
+    }
+  }, [draggedIndex, onReorder]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  }, []);
 
   const formatDuration = (seconds: number | null) => {
     if (seconds === null) return '-';
@@ -101,10 +148,9 @@ export default function LineTable({
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <div className="text-5xl mb-4">📄</div>
-        <h3 className="text-lg font-medium text-surface-300 mb-2">No lines yet</h3>
+        <h3 className="text-lg font-medium text-surface-300 mb-2">{t('tts.no_lines')}</h3>
         <p className="text-sm text-surface-500 max-w-md">
-          Import files using drag & drop or the import button to get started.
-          Supported formats: SRT, TXT, DOCX
+          {t('tts.import_files')}
         </p>
       </div>
     );
@@ -113,7 +159,8 @@ export default function LineTable({
   return (
     <div className="overflow-hidden rounded-lg border border-surface-800">
       {/* Header */}
-      <div className="grid grid-cols-[40px_50px_1fr_180px_100px_80px_60px] gap-2 px-3 py-2 bg-surface-850 border-b border-surface-800 text-xs font-medium text-surface-400 uppercase tracking-wider">
+      <div className={`grid gap-2 px-3 py-2 bg-surface-850 border-b border-surface-800 text-xs font-medium text-surface-400 uppercase tracking-wider ${onReorder ? 'grid-cols-[24px_40px_50px_1fr_180px_100px_80px_60px]' : 'grid-cols-[40px_50px_1fr_180px_100px_80px_60px]'}`}>
+        {onReorder && <div></div>}
         <div className="flex items-center justify-center">
           <input
             type="checkbox"
@@ -123,33 +170,52 @@ export default function LineTable({
             className="w-4 h-4 rounded border-surface-600 bg-surface-800 text-primary-500 focus:ring-primary-500"
           />
         </div>
-        <div>#</div>
-        <div>Text</div>
-        <div>Voice</div>
-        <div>Status</div>
-        <div>Duration</div>
+        <div>{t('table.index')}</div>
+        <div>{t('table.text')}</div>
+        <div>{t('table.voice')}</div>
+        <div>{t('table.status')}</div>
+        <div>{t('table.duration')}</div>
         <div></div>
       </div>
 
       {/* Body */}
       <div className="max-h-[500px] overflow-y-auto">
-        {lines.map((line) => {
+        {lines.map((line, arrayIndex) => {
           const status = STATUS_CONFIG[line.status];
           const isSelected = selectedIds.has(line.id);
-          const isEditing = editingId === line.id;
 
           return (
             <div
               key={line.id}
+              onDragOver={(e) => { if (onReorder) handleDragOver(e, arrayIndex); }}
+              onDragLeave={onReorder ? handleDragLeave : undefined}
+              onDrop={(e) => { if (onReorder) handleDrop(e, arrayIndex); }}
               onContextMenu={(e) => handleContextMenu(e, line)}
               className={`
-                grid grid-cols-[40px_50px_1fr_180px_100px_80px_60px] gap-2 px-3 py-2
+                grid gap-2 px-3 py-2
                 border-b border-surface-800/50 text-sm
                 transition-colors duration-100
+                ${onReorder ? 'grid-cols-[24px_40px_50px_1fr_180px_100px_80px_60px]' : 'grid-cols-[40px_50px_1fr_180px_100px_80px_60px]'}
                 ${isSelected ? 'bg-primary-500/10' : 'hover:bg-surface-800/50'}
                 ${line.status === 'error' ? 'bg-red-500/5' : ''}
+                ${draggedIndex === arrayIndex ? 'opacity-50' : ''}
+                ${dragOverIndex === arrayIndex ? 'border-t-2 border-t-primary-500' : ''}
               `}
             >
+              {/* Drag Handle */}
+              {onReorder && (
+                <div 
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, arrayIndex)}
+                  onDragEnd={handleDragEnd}
+                  className="flex items-center justify-center cursor-grab active:cursor-grabbing text-surface-600 hover:text-surface-400"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                  </svg>
+                </div>
+              )}
+
               {/* Checkbox */}
               <div className="flex items-center justify-center">
                 <input
@@ -167,27 +233,18 @@ export default function LineTable({
 
               {/* Text */}
               <div 
-                className="flex items-center min-w-0"
+                className={`flex items-center min-w-0 cursor-text rounded px-1 -mx-1 transition-colors ${
+                  editingLine?.id === line.id ? 'bg-primary-500/20 ring-1 ring-primary-500/50' : 'hover:bg-surface-700/50'
+                }`}
                 onDoubleClick={() => handleDoubleClick(line)}
+                title="Double-click to edit"
               >
-                {isEditing ? (
-                  <textarea
-                    value={editText}
-                    onChange={(e) => setEditText(e.target.value)}
-                    onBlur={handleEditSubmit}
-                    onKeyDown={handleKeyDown}
-                    autoFocus
-                    className="w-full px-2 py-1 bg-surface-800 border border-primary-500 rounded text-sm resize-none focus:outline-none"
-                    rows={2}
-                  />
-                ) : (
-                  <span 
-                    className="truncate cursor-text hover:text-surface-200" 
-                    title={line.text}
-                  >
-                    {line.text}
-                  </span>
-                )}
+                <span 
+                  className="truncate" 
+                  title={line.text}
+                >
+                  {line.text}
+                </span>
               </div>
 
               {/* Voice */}
@@ -217,7 +274,7 @@ export default function LineTable({
                   {status.icon}
                 </span>
                 <span className={`text-xs ${status.color}`}>
-                  {status.label}
+                  {t(status.labelKey)}
                 </span>
               </div>
 
@@ -260,21 +317,105 @@ export default function LineTable({
       {selectedIds.size > 0 && (
         <div className="flex items-center justify-between px-3 py-2 bg-surface-850 border-t border-surface-800">
           <span className="text-sm text-surface-400">
-            {selectedIds.size} of {lines.length} selected
+            {selectedIds.size} / {lines.length} {t('table.selected')}
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => onRetry(Array.from(selectedIds))}
               className="px-3 py-1 text-xs bg-yellow-500/20 text-yellow-400 rounded hover:bg-yellow-500/30 transition-colors"
             >
-              Retry Selected
+              {t('table.retry_selected')}
             </button>
             <button
               onClick={() => onDelete(Array.from(selectedIds))}
               className="px-3 py-1 text-xs bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors"
             >
-              Delete Selected
+              {t('table.delete_selected')}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Side Edit Panel */}
+      {editingLine && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/40"
+            onClick={handleEditCancel}
+          />
+          
+          {/* Panel */}
+          <div className="relative w-full max-w-md bg-surface-900 border-l border-surface-700 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-surface-700 bg-surface-800/50">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary-500/20 text-primary-400 font-mono text-sm font-medium">
+                  {editingLine.index + 1}
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium text-surface-100">Edit Line</h3>
+                  <p className="text-xs text-surface-500">Line #{editingLine.index + 1}</p>
+                </div>
+              </div>
+              <button
+                onClick={handleEditCancel}
+                className="p-1.5 text-surface-400 hover:text-surface-200 hover:bg-surface-700 rounded-lg transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 p-4 overflow-y-auto">
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-surface-300">
+                  Text Content
+                </label>
+                <textarea
+                  ref={textareaRef}
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  className="w-full h-48 px-3 py-2 bg-surface-800 border border-surface-700 rounded-lg text-sm text-surface-100 resize-none focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/50"
+                  placeholder="Enter text..."
+                />
+                <div className="flex items-center justify-between text-xs text-surface-500">
+                  <span>{editText.length} characters</span>
+                  <span className="text-surface-600">Ctrl+Enter to save, Esc to cancel</span>
+                </div>
+              </div>
+
+              {/* Original text reference */}
+              {editText !== editingLine.text && (
+                <div className="mt-4 p-3 bg-surface-800/50 rounded-lg border border-surface-700">
+                  <div className="text-xs text-surface-500 mb-1">Original text:</div>
+                  <div className="text-xs text-surface-400 line-clamp-3">{editingLine.text}</div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-surface-700 bg-surface-800/50">
+              <button
+                onClick={handleEditCancel}
+                className="px-4 py-2 text-sm font-medium text-surface-300 hover:text-surface-100 hover:bg-surface-700 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditSubmit}
+                disabled={!editText.trim() || editText === editingLine.text}
+                className="px-4 py-2 text-sm font-medium text-white bg-primary-500 hover:bg-primary-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Save Changes
+              </button>
+            </div>
           </div>
         </div>
       )}

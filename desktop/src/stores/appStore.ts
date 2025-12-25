@@ -19,6 +19,47 @@ interface Job {
   error?: string;
 }
 
+interface VoicePreset {
+  id: string;
+  name: string;
+  voiceId: string;
+  voiceName: string;
+  settings: {
+    stability: number;
+    similarityBoost: number;
+    style: number;
+    speed: number;
+    useSpeakerBoost: boolean;
+    modelId: string;
+  };
+}
+
+interface ExportHistoryEntry {
+  id: string;
+  timestamp: number;
+  outputPath: string;
+  lineIndex: number;
+  lineText: string;
+  voiceName: string;
+  durationMs: number;
+  sessionFolder: string;
+}
+
+interface RecoveryData {
+  timestamp: number;
+  outputFolder: string;
+  defaultVoiceId: string | null;
+  defaultVoiceName: string | null;
+  lines: Array<{
+    id: string;
+    index: number;
+    text: string;
+    voice_id: string | null;
+    voice_name: string | null;
+    status: string;
+  }>;
+}
+
 interface AppState {
   isBackendReady: boolean;
   versionInfo: VersionInfo | null;
@@ -28,8 +69,19 @@ interface AppState {
   totalCredits: number;
   jobs: Map<string, Job>;
   currentJobId: string | null;
-  theme: 'light' | 'dark';
+  theme: string;
+  backgroundImage: string | null;
+  backgroundOpacity: number;
+  backgroundBlur: number;
   sidebarCollapsed: boolean;
+
+  // Voice favorites and presets
+  favoriteVoiceIds: Set<string>;
+  voicePresets: VoicePreset[];
+
+  // Export history and recovery
+  exportHistory: ExportHistoryEntry[];
+  hasRecoveryData: boolean;
 
   // Project state
   projectName: string;
@@ -56,7 +108,10 @@ interface AppState {
   removeJob: (id: string) => void;
   setCurrentJobId: (id: string | null) => void;
   handleProgress: (event: ProgressEvent) => void;
-  setTheme: (theme: 'light' | 'dark') => void;
+  setTheme: (theme: string) => void;
+  setBackgroundImage: (url: string | null) => void;
+  setBackgroundOpacity: (opacity: number) => void;
+  setBackgroundBlur: (blur: number) => void;
   toggleSidebar: () => void;
 
   // Project actions
@@ -76,12 +131,29 @@ interface AppState {
   setSelectedLineIds: (ids: Set<string>) => void;
   setLineVoice: (id: string, voiceId: string, voiceName: string) => void;
   setAllLinesVoice: (voiceId: string, voiceName: string) => void;
+  reorderLines: (fromIndex: number, toIndex: number) => void;
 
   // Processing actions
   setProcessing: (processing: boolean) => void;
   setPaused: (paused: boolean) => void;
   updateProcessingStats: (stats: Partial<ProcessingStats>) => void;
   resetProcessingStats: () => void;
+
+  // Voice favorites and presets actions
+  toggleFavoriteVoice: (voiceId: string) => void;
+  addVoicePreset: (preset: Omit<VoicePreset, 'id'>) => void;
+  removeVoicePreset: (id: string) => void;
+  loadVoicePreset: (id: string) => VoicePreset | undefined;
+
+  // Export history actions
+  addExportEntry: (entry: Omit<ExportHistoryEntry, 'id' | 'timestamp'>) => void;
+  clearExportHistory: () => void;
+
+  // Recovery actions
+  saveRecoveryData: () => void;
+  loadRecoveryData: () => RecoveryData | null;
+  clearRecoveryData: () => void;
+  restoreFromRecovery: () => boolean;
 }
 
 const initialProcessingStats: ProcessingStats = {
@@ -94,6 +166,47 @@ const initialProcessingStats: ProcessingStats = {
   elapsed_seconds: 0,
 };
 
+// Load favorites and presets from localStorage
+const loadFavorites = (): Set<string> => {
+  try {
+    const stored = localStorage.getItem('2tts_favorite_voices');
+    return stored ? new Set(JSON.parse(stored)) : new Set();
+  } catch {
+    return new Set();
+  }
+};
+
+const loadPresets = (): VoicePreset[] => {
+  try {
+    const stored = localStorage.getItem('2tts_voice_presets');
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+};
+
+const loadExportHistory = (): ExportHistoryEntry[] => {
+  try {
+    const stored = localStorage.getItem('2tts_export_history');
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+};
+
+const checkRecoveryData = (): boolean => {
+  try {
+    const stored = localStorage.getItem('2tts_recovery_data');
+    if (!stored) return false;
+    const data = JSON.parse(stored);
+    // Only consider recovery data valid if it has lines and is less than 24 hours old
+    const isValid = data.lines?.length > 0 && (Date.now() - data.timestamp) < 24 * 60 * 60 * 1000;
+    return isValid;
+  } catch {
+    return false;
+  }
+};
+
 export const useAppStore = create<AppState>((set, get) => ({
   isBackendReady: false,
   versionInfo: null,
@@ -104,7 +217,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   jobs: new Map(),
   currentJobId: null,
   theme: 'dark',
+  backgroundImage: null,
+  backgroundOpacity: 0.5,
+  backgroundBlur: 0,
   sidebarCollapsed: false,
+
+  // Voice favorites and presets
+  favoriteVoiceIds: loadFavorites(),
+  voicePresets: loadPresets(),
+
+  // Export history and recovery
+  exportHistory: loadExportHistory(),
+  hasRecoveryData: checkRecoveryData(),
 
   // Project state
   projectName: 'Untitled',
@@ -122,11 +246,20 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setBackendReady: (ready) => set({ isBackendReady: ready }),
   setVersionInfo: (info) => set({ versionInfo: info }),
-  setConfig: (config) => set({ 
-    config, 
-    theme: config.theme === 'light' ? 'light' : 'dark',
-    outputFolder: config.default_output_folder || '',
-  }),
+  setConfig: (config) => {
+    // Apply theme
+    document.documentElement.dataset.theme = config.theme;
+    document.documentElement.classList.toggle('dark', config.theme !== 'light');
+    
+    set({ 
+      config, 
+      theme: config.theme,
+      backgroundImage: config.background_image || null,
+      backgroundOpacity: config.background_opacity ?? 0.5,
+      backgroundBlur: config.background_blur ?? 0,
+      outputFolder: config.default_output_folder || '',
+    });
+  },
   setVoices: (voices) => set({ voices }),
   setAPIKeys: (keys) => set({ apiKeys: keys }),
   setTotalCredits: (credits) => set({ totalCredits: credits }),
@@ -164,8 +297,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setTheme: (theme) => {
     set({ theme });
-    document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.classList.toggle('dark', theme !== 'light');
   },
+  
+  setBackgroundImage: (url) => set({ backgroundImage: url }),
+  setBackgroundOpacity: (opacity) => set({ backgroundOpacity: opacity }),
+  setBackgroundBlur: (blur) => set({ backgroundBlur: blur }),
 
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
 
@@ -267,6 +405,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       defaultVoiceName: voiceName,
     })),
 
+  reorderLines: (fromIndex, toIndex) =>
+    set((state) => {
+      const newLines = [...state.lines];
+      const [removed] = newLines.splice(fromIndex, 1);
+      newLines.splice(toIndex, 0, removed);
+      // Re-index all lines
+      newLines.forEach((line, i) => (line.index = i));
+      return { lines: newLines };
+    }),
+
   // Processing actions
   setProcessing: (processing) => set({ isProcessing: processing }),
   setPaused: (paused) => set({ isPaused: paused }),
@@ -284,4 +432,128 @@ export const useAppStore = create<AppState>((set, get) => ({
         pending: state.lines.filter((l) => l.status === 'pending').length,
       },
     })),
+
+  // Voice favorites and presets actions
+  toggleFavoriteVoice: (voiceId) =>
+    set((state) => {
+      const newFavorites = new Set(state.favoriteVoiceIds);
+      if (newFavorites.has(voiceId)) {
+        newFavorites.delete(voiceId);
+      } else {
+        newFavorites.add(voiceId);
+      }
+      localStorage.setItem('2tts_favorite_voices', JSON.stringify([...newFavorites]));
+      return { favoriteVoiceIds: newFavorites };
+    }),
+
+  addVoicePreset: (preset) =>
+    set((state) => {
+      const newPreset: VoicePreset = { ...preset, id: uuidv4() };
+      const newPresets = [...state.voicePresets, newPreset];
+      localStorage.setItem('2tts_voice_presets', JSON.stringify(newPresets));
+      return { voicePresets: newPresets };
+    }),
+
+  removeVoicePreset: (id) =>
+    set((state) => {
+      const newPresets = state.voicePresets.filter((p) => p.id !== id);
+      localStorage.setItem('2tts_voice_presets', JSON.stringify(newPresets));
+      return { voicePresets: newPresets };
+    }),
+
+  loadVoicePreset: (id) => {
+    return get().voicePresets.find((p) => p.id === id);
+  },
+
+  // Export history actions
+  addExportEntry: (entry) =>
+    set((state) => {
+      const newEntry: ExportHistoryEntry = {
+        ...entry,
+        id: uuidv4(),
+        timestamp: Date.now(),
+      };
+      // Keep only last 100 entries
+      const newHistory = [newEntry, ...state.exportHistory].slice(0, 100);
+      localStorage.setItem('2tts_export_history', JSON.stringify(newHistory));
+      return { exportHistory: newHistory };
+    }),
+
+  clearExportHistory: () =>
+    set(() => {
+      localStorage.removeItem('2tts_export_history');
+      return { exportHistory: [] };
+    }),
+
+  // Recovery actions
+  saveRecoveryData: () => {
+    const state = get();
+    if (state.lines.length === 0) return;
+    
+    const recoveryData: RecoveryData = {
+      timestamp: Date.now(),
+      outputFolder: state.outputFolder,
+      defaultVoiceId: state.defaultVoiceId,
+      defaultVoiceName: state.defaultVoiceName,
+      lines: state.lines.map((l) => ({
+        id: l.id,
+        index: l.index,
+        text: l.text,
+        voice_id: l.voice_id,
+        voice_name: l.voice_name,
+        status: l.status,
+      })),
+    };
+    localStorage.setItem('2tts_recovery_data', JSON.stringify(recoveryData));
+  },
+
+  loadRecoveryData: () => {
+    try {
+      const stored = localStorage.getItem('2tts_recovery_data');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  clearRecoveryData: () =>
+    set(() => {
+      localStorage.removeItem('2tts_recovery_data');
+      return { hasRecoveryData: false };
+    }),
+
+  restoreFromRecovery: () => {
+    const recoveryData = get().loadRecoveryData();
+    if (!recoveryData || !recoveryData.lines?.length) return false;
+
+    const restoredLines: TextLine[] = recoveryData.lines.map((l, i) => ({
+      id: l.id || uuidv4(),
+      index: l.index ?? i,
+      text: l.text,
+      original_text: l.text,
+      voice_id: l.voice_id,
+      voice_name: l.voice_name,
+      status: (l.status === 'done' ? 'done' : 'pending') as LineStatus,
+      error_message: null,
+      source_file: null,
+      start_time: null,
+      end_time: null,
+      audio_duration: null,
+      output_path: null,
+      retry_count: 0,
+      detected_language: null,
+      model_id: null,
+    }));
+
+    set({
+      lines: restoredLines,
+      outputFolder: recoveryData.outputFolder || '',
+      defaultVoiceId: recoveryData.defaultVoiceId,
+      defaultVoiceName: recoveryData.defaultVoiceName,
+      hasRecoveryData: false,
+    });
+
+    localStorage.removeItem('2tts_recovery_data');
+    return true;
+  },
 }));

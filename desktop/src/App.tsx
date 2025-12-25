@@ -11,6 +11,7 @@ import { updateManager, UpdateState } from './lib/updater';
 import SplashScreen from './components/SplashScreen';
 import ErrorScreen from './components/ErrorScreen';
 import UpdateDialog from './components/UpdateDialog';
+import UpToDateDialog from './components/UpToDateDialog';
 
 interface DebugInfo {
   isDev: boolean;
@@ -27,7 +28,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [updateState, setUpdateState] = useState<UpdateState>(updateManager.getState());
-  const { setBackendReady, setVersionInfo } = useAppStore();
+  const { setBackendReady, setVersionInfo, setConfig } = useAppStore();
 
   // Subscribe to update manager
   useEffect(() => {
@@ -69,6 +70,15 @@ function App() {
           protocolVersion: handshake.protocol_version,
         });
         setBackendReady(true);
+        
+        // Load config
+        try {
+          const config = await ipcClient.getConfig();
+          setConfig(config);
+        } catch (e) {
+          console.error('Failed to load initial config:', e);
+        }
+
         setIsLoading(false);
         console.log('[App] Initialization complete');
         
@@ -118,6 +128,13 @@ function App() {
         onUpdate={() => updateManager.downloadAndInstall()}
         isDownloading={updateState.downloading}
         downloadProgress={updateState.progress}
+      />
+
+      {/* Up to Date Dialog */}
+      <UpToDateDialog
+        isOpen={updateState.upToDate}
+        currentVersion={updateState.currentVersion}
+        onClose={() => updateManager.dismissUpToDate()}
       />
     </>
   );

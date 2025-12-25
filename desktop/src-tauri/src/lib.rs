@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, WindowEvent};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::oneshot;
@@ -251,6 +251,18 @@ pub fn run() {
 
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.emit("debug-info", debug_info);
+
+                // Listen for drag-drop events and forward to frontend
+                let window_clone = window.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                        let file_paths: Vec<String> = paths
+                            .iter()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .collect();
+                        let _ = window_clone.emit("files-dropped", file_paths);
+                    }
+                });
             }
 
             Ok(())
@@ -262,6 +274,7 @@ pub fn run() {
             commands::window_close,
             commands::write_text_file,
             commands::read_text_file,
+            commands::open_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,4 +1,5 @@
 import { ProcessingStats } from '../lib/ipc/types';
+import { useTranslation } from '../lib/i18n';
 
 interface ProcessingControlsProps {
   isProcessing: boolean;
@@ -21,6 +22,7 @@ export default function ProcessingControls({
   onStop,
   disabled = false,
 }: ProcessingControlsProps) {
+  const { t } = useTranslation();
   const progress = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
   
   const formatTime = (seconds: number) => {
@@ -42,7 +44,7 @@ export default function ProcessingControls({
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm">
           <span className="text-surface-400">
-            {isProcessing ? (isPaused ? 'Paused' : 'Processing...') : 'Ready'}
+            {isProcessing ? (isPaused ? t('common.pause') : t('tts.processing')) : t('status.ready')}
           </span>
           <span className="text-surface-300 font-medium">
             {stats.completed} / {stats.total}
@@ -65,15 +67,15 @@ export default function ProcessingControls({
         <div className="grid grid-cols-4 gap-4 text-center">
           <div>
             <div className="text-lg font-semibold text-green-400">{stats.completed}</div>
-            <div className="text-xs text-surface-500">Completed</div>
+            <div className="text-xs text-surface-500">{t('tts.completed')}</div>
           </div>
           <div>
             <div className="text-lg font-semibold text-yellow-400">{stats.processing}</div>
-            <div className="text-xs text-surface-500">Processing</div>
+            <div className="text-xs text-surface-500">{t('status.processing')}</div>
           </div>
           <div>
             <div className="text-lg font-semibold text-red-400">{stats.failed}</div>
-            <div className="text-xs text-surface-500">Failed</div>
+            <div className="text-xs text-surface-500">{t('tts.failed')}</div>
           </div>
           <div>
             <div className="text-lg font-semibold text-surface-300">{estimatedRemaining()}</div>
@@ -94,7 +96,7 @@ export default function ProcessingControls({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            Start Processing
+            {t('common.start')}
           </button>
         ) : (
           <>
@@ -106,7 +108,7 @@ export default function ProcessingControls({
                 <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                 </svg>
-                Resume
+                {t('common.resume')}
               </button>
             ) : (
               <button
@@ -116,7 +118,7 @@ export default function ProcessingControls({
                 <svg className="w-5 h-5 mr-2 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Pause
+                {t('common.pause')}
               </button>
             )}
             <button
@@ -127,7 +129,7 @@ export default function ProcessingControls({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
               </svg>
-              Stop
+              {t('common.stop')}
             </button>
           </>
         )}

@@ -2,8 +2,12 @@ import { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getPlatformAPI } from '../lib/platform';
 import { ipcClient, TranscriptionResult } from '../lib/ipc';
+import { useTranslation } from '../lib/i18n';
+import { useAppStore } from '../stores/appStore';
 
 export default function TranscribePage() {
+  const { t } = useTranslation();
+  const { setTotalCredits } = useAppStore();
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -52,6 +56,10 @@ export default function TranscribePage() {
         num_speakers: enableDiarization ? numSpeakers : undefined,
       });
       setResult(result);
+      
+      // Refresh credits after transcription
+      const credits = await ipcClient.getCredits();
+      setTotalCredits(credits);
     } catch (err) {
       console.error('Transcription failed:', err);
       setError(err instanceof Error ? err.message : 'Transcription failed');
@@ -59,7 +67,7 @@ export default function TranscribePage() {
       setIsProcessing(false);
       setProgress(100);
     }
-  }, [selectedFile, language, enableDiarization, numSpeakers]);
+  }, [selectedFile, language, enableDiarization, numSpeakers, setTotalCredits]);
 
   const handleExport = useCallback(async (format: 'txt' | 'srt' | 'json') => {
     if (!result) return;
@@ -82,7 +90,7 @@ export default function TranscribePage() {
         content = result.segments.map((seg, i) => {
           const start = formatTime(seg.start);
           const end = formatTime(seg.end);
-          const speaker = seg.speaker ? `[${seg.speaker}] ` : '';
+          const speaker = seg.speaker_id ? `[${seg.speaker_id}] ` : '';
           return `${i + 1}\n${start} --> ${end}\n${speaker}${seg.text}\n`;
         }).join('\n');
       } else if (format === 'json') {
@@ -90,7 +98,7 @@ export default function TranscribePage() {
       }
 
       // Write file via invoke
-      await invoke('write_text_file', { path: savePath, content });
+      await invoke('write_text_file', { path: savePath, contents: content });
       
     } catch (err) {
       console.error('Export failed:', err);
@@ -122,8 +130,8 @@ export default function TranscribePage() {
     <div className="h-full flex flex-col gap-4 p-4 overflow-hidden">
       <div className="flex items-center justify-between shrink-0">
         <div>
-          <h1 className="text-xl font-semibold text-surface-100">Speech to Text</h1>
-          <p className="text-sm text-surface-500">Transcribe audio and video files</p>
+          <h1 className="text-xl font-semibold text-surface-100">{t('transcribe.title')}</h1>
+          <p className="text-sm text-surface-500">{t('transcribe.drop_media')}</p>
         </div>
       </div>
 
@@ -154,14 +162,14 @@ export default function TranscribePage() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-surface-300 mb-2">
-              Language
+              {t('transcribe.language')}
             </label>
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
               className="w-full px-3 py-2 bg-surface-800 border border-surface-700 rounded-lg text-sm"
             >
-              <option value="">Auto-detect</option>
+              <option value="">{t('transcribe.auto_detect')}</option>
               <option value="en">English</option>
               <option value="vi">Vietnamese</option>
               <option value="zh">Chinese</option>
@@ -177,7 +185,7 @@ export default function TranscribePage() {
 
           <div>
             <label className="block text-sm font-medium text-surface-300 mb-2">
-              Speaker Diarization
+              {t('transcribe.identify_speakers')}
             </label>
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2 cursor-pointer">
@@ -187,7 +195,7 @@ export default function TranscribePage() {
                   onChange={(e) => setEnableDiarization(e.target.checked)}
                   className="w-4 h-4 rounded border-surface-600 bg-surface-800"
                 />
-                <span className="text-sm text-surface-300">Enable</span>
+                <span className="text-sm text-surface-300">{t('common.enable')}</span>
               </label>
               {enableDiarization && (
                 <input
@@ -196,7 +204,7 @@ export default function TranscribePage() {
                   max={10}
                   value={numSpeakers || ''}
                   onChange={(e) => setNumSpeakers(e.target.value ? parseInt(e.target.value) : undefined)}
-                  placeholder="Speakers"
+                  placeholder={t('transcribe.num_speakers')}
                   className="w-24 px-3 py-2 bg-surface-800 border border-surface-700 rounded-lg text-sm"
                 />
               )}
@@ -216,10 +224,10 @@ export default function TranscribePage() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
-                Transcribing...
+                {t('tts.processing')}
               </>
             ) : (
-              'Start Transcription'
+              t('transcribe.start')
             )}
           </button>
         </div>
@@ -281,9 +289,9 @@ export default function TranscribePage() {
                       <span className="text-xs text-primary-400 font-mono">
                         {formatDuration(seg.start)} - {formatDuration(seg.end)}
                       </span>
-                      {seg.speaker && (
+                      {seg.speaker_id && (
                         <span className="text-xs px-2 py-0.5 bg-surface-700 rounded text-surface-300">
-                          {seg.speaker}
+                          {seg.speaker_id}
                         </span>
                       )}
                     </div>

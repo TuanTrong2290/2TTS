@@ -4,24 +4,18 @@ import { getPlatformAPI } from '../lib/platform';
 import { checkForUpdates } from '../lib/updater';
 import { useAppStore } from '../stores/appStore';
 import { Proxy } from '../lib/ipc/types';
+import { useTranslation, AVAILABLE_LANGUAGES } from '../lib/i18n';
 
-type SettingsTab = 'general' | 'apikeys' | 'proxies' | 'presets' | 'patterns' | 'analytics' | 'about';
+type SettingsTab = 'general' | 'appearance' | 'apikeys' | 'proxies' | 'presets' | 'patterns' | 'analytics' | 'about';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const { setConfig, setAPIKeys, versionInfo } = useAppStore();
+  const { language, setLanguage, t } = useTranslation();
 
   const [outputFolder, setOutputFolder] = useState('');
   const [threadCount, setThreadCount] = useState(5);
   const [maxRetries, setMaxRetries] = useState(3);
-  const [language, setLanguage] = useState('en');
-  const [availableLanguages] = useState<Array<{ code: string; name: string }>>([
-    { code: 'en', name: 'English' },
-    { code: 'vi', name: 'Vietnamese' },
-    { code: 'zh', name: 'Chinese' },
-    { code: 'ja', name: 'Japanese' },
-    { code: 'ko', name: 'Korean' },
-  ]);
 
   useEffect(() => {
     loadSettings();
@@ -73,19 +67,20 @@ export default function SettingsPage() {
     }
   }
 
-  const tabs: { id: SettingsTab; label: string }[] = [
-    { id: 'general', label: 'General' },
-    { id: 'apikeys', label: 'API Keys' },
-    { id: 'proxies', label: 'Proxies' },
-    { id: 'presets', label: 'Presets' },
-    { id: 'patterns', label: 'Voice Patterns' },
-    { id: 'analytics', label: 'Analytics' },
-    { id: 'about', label: 'About' },
+  const tabs: { id: SettingsTab; labelKey: string }[] = [
+    { id: 'general', labelKey: 'settings.general' },
+    { id: 'appearance', labelKey: 'settings.appearance' },
+    { id: 'apikeys', labelKey: 'settings.api_keys' },
+    { id: 'proxies', labelKey: 'settings.proxies' },
+    { id: 'presets', labelKey: 'settings.presets' },
+    { id: 'patterns', labelKey: 'settings.voice_patterns' },
+    { id: 'analytics', labelKey: 'settings.analytics' },
+    { id: 'about', labelKey: 'settings.about' },
   ];
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <h1 className="text-2xl font-semibold text-surface-100">Settings</h1>
+      <h1 className="text-2xl font-semibold text-surface-100">{t('settings.title')}</h1>
 
       <div className="flex gap-1 border-b border-surface-800">
         {tabs.map((tab) => (
@@ -100,7 +95,7 @@ export default function SettingsPage() {
             role="tab"
             aria-selected={activeTab === tab.id}
           >
-            {tab.label}
+            {t(tab.labelKey)}
           </button>
         ))}
       </div>
@@ -110,7 +105,7 @@ export default function SettingsPage() {
           <div className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-surface-300 mb-2">
-                Default Output Folder
+                {t('settings.output_folder')}
               </label>
               <div className="flex gap-2">
                 <input
@@ -121,7 +116,7 @@ export default function SettingsPage() {
                   aria-label="Default output folder"
                 />
                 <button onClick={handleSelectFolder} className="btn-secondary">
-                  Browse
+                  {t('common.browse')}
                 </button>
               </div>
             </div>
@@ -129,7 +124,7 @@ export default function SettingsPage() {
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-surface-300 mb-2">
-                  Thread Count
+                  {t('settings.thread_count')}
                 </label>
                 <input
                   type="number"
@@ -140,11 +135,11 @@ export default function SettingsPage() {
                   className="input"
                   aria-label="Thread count"
                 />
-                <p className="text-xs text-surface-500 mt-1">Parallel TTS processes</p>
+                <p className="text-xs text-surface-500 mt-1">{t('settings.thread_count_desc')}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-surface-300 mb-2">
-                  Max Retries
+                  {t('settings.max_retries')}
                 </label>
                 <input
                   type="number"
@@ -155,11 +150,11 @@ export default function SettingsPage() {
                   className="input"
                   aria-label="Max retries"
                 />
-                <p className="text-xs text-surface-500 mt-1">On API failure</p>
+                <p className="text-xs text-surface-500 mt-1">{t('settings.max_retries_desc')}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-surface-300 mb-2">
-                  Language
+                  {t('settings.language')}
                 </label>
                 <select
                   value={language}
@@ -167,22 +162,23 @@ export default function SettingsPage() {
                   className="input"
                   aria-label="Interface language"
                 >
-                  {availableLanguages.map((lang) => (
+                  {AVAILABLE_LANGUAGES.map((lang) => (
                     <option key={lang.code} value={lang.code}>{lang.name}</option>
                   ))}
                 </select>
-                <p className="text-xs text-surface-500 mt-1">UI language</p>
+                <p className="text-xs text-surface-500 mt-1">{t('settings.language_desc')}</p>
               </div>
             </div>
 
             <div className="flex justify-end pt-4 border-t border-surface-800">
               <button onClick={handleSaveGeneral} className="btn-primary">
-                Save Changes
+                {t('settings.save_changes')}
               </button>
             </div>
           </div>
         )}
 
+        {activeTab === 'appearance' && <AppearanceTab />}
         {activeTab === 'apikeys' && <APIKeysTab />}
         {activeTab === 'proxies' && <ProxiesTab />}
         {activeTab === 'presets' && <PresetsTab />}
@@ -197,21 +193,21 @@ export default function SettingsPage() {
               </div>
               <div>
                 <h2 className="text-xl font-semibold text-surface-100">2TTS</h2>
-                <p className="text-sm text-surface-400">Text-to-Speech Tool</p>
+                <p className="text-sm text-surface-400">{t('about.description')}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 bg-surface-800 rounded-lg">
-                <div className="text-xs text-surface-500 uppercase">UI Version</div>
+                <div className="text-xs text-surface-500 uppercase">{t('about.ui_version')}</div>
                 <div className="text-lg font-medium text-surface-200">
-                  {versionInfo?.uiVersion || 'Unknown'}
+                  {versionInfo?.uiVersion || t('common.unknown')}
                 </div>
               </div>
               <div className="p-3 bg-surface-800 rounded-lg">
-                <div className="text-xs text-surface-500 uppercase">Backend Version</div>
+                <div className="text-xs text-surface-500 uppercase">{t('about.backend_version')}</div>
                 <div className="text-lg font-medium text-surface-200">
-                  {versionInfo?.backendVersion || 'Unknown'}
+                  {versionInfo?.backendVersion || t('common.unknown')}
                 </div>
               </div>
             </div>
@@ -226,7 +222,7 @@ export default function SettingsPage() {
                     d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                   />
                 </svg>
-                Check for Updates
+                {t('about.check_updates')}
               </button>
               <button onClick={handleExportDiagnostics} className="btn-secondary">
                 <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -237,7 +233,7 @@ export default function SettingsPage() {
                     d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                   />
                 </svg>
-                Export Diagnostics
+                {t('settings.export_diagnostics')}
               </button>
             </div>
           </div>
@@ -248,6 +244,7 @@ export default function SettingsPage() {
 }
 
 function APIKeysTab() {
+  const { t } = useTranslation();
   const { apiKeys, setAPIKeys } = useAppStore();
   const [newKeyValue, setNewKeyValue] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -255,6 +252,7 @@ function APIKeysTab() {
   const [isValidatingAll, setIsValidatingAll] = useState(false);
   const [validationProgress, setValidationProgress] = useState({ current: 0, total: 0 });
   const [error, setError] = useState<string | null>(null);
+  const [proxies, setProxies] = useState<Proxy[]>([]);
   const [status, setStatus] = useState<{
     active_key: { id: string; key: string; remaining_credits: number } | null;
     exhausted_keys: { id: string; key: string; remaining_credits: number }[];
@@ -265,7 +263,17 @@ function APIKeysTab() {
 
   useEffect(() => {
     loadKeys();
+    loadProxies();
   }, []);
+
+  async function loadProxies() {
+    try {
+      const list = await ipcClient.getProxies();
+      setProxies(list);
+    } catch (err) {
+      console.error('Failed to load proxies:', err);
+    }
+  }
 
   async function loadKeys() {
     setIsLoading(true);
@@ -283,6 +291,19 @@ function APIKeysTab() {
       setError(err instanceof Error ? err.message : 'Failed to load API keys');
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handleAssignProxy(keyId: string, proxyId: string | null) {
+    try {
+      await ipcClient.assignProxyToKey(keyId, proxyId);
+      // Update local state
+      setAPIKeys(apiKeys.map(k => 
+        k.id === keyId ? { ...k, assigned_proxy_id: proxyId } : k
+      ));
+    } catch (err) {
+      console.error('Failed to assign proxy:', err);
+      setError(err instanceof Error ? err.message : 'Failed to assign proxy');
     }
   }
 
@@ -372,9 +393,9 @@ function APIKeysTab() {
       {status && apiKeys.length > 0 && (
         <div className="p-4 bg-surface-800/50 rounded-lg border border-surface-700 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-surface-200">API Key Status</h3>
+            <h3 className="text-sm font-medium text-surface-200">{t('apikeys.status')}</h3>
             <div className="text-sm text-surface-400">
-              Total: {status.total_credits.toLocaleString()} credits
+              {t('apikeys.total')}: {status.total_credits.toLocaleString()} {t('tts.credits').toLowerCase()}
             </div>
           </div>
           
@@ -383,24 +404,24 @@ function APIKeysTab() {
             <div className="flex items-center gap-3 p-2 bg-green-500/10 border border-green-500/30 rounded">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
               <div className="flex-1">
-                <div className="text-xs text-green-400 uppercase font-medium">Currently Active</div>
+                <div className="text-xs text-green-400 uppercase font-medium">{t('apikeys.active')}</div>
                 <div className="text-sm text-surface-200 font-mono">{status.active_key.key}</div>
               </div>
               <div className="text-sm text-green-400">
-                {status.active_key.remaining_credits.toLocaleString()} credits
+                {status.active_key.remaining_credits.toLocaleString()} {t('tts.credits').toLowerCase()}
               </div>
             </div>
           ) : (
             <div className="flex items-center gap-3 p-2 bg-red-500/10 border border-red-500/30 rounded">
               <div className="w-2 h-2 bg-red-500 rounded-full" />
-              <div className="text-sm text-red-400">No active API key available</div>
+              <div className="text-sm text-red-400">{t('apikeys.no_active')}</div>
             </div>
           )}
 
           {/* Exhausted Keys */}
           {status.exhausted_keys.length > 0 && (
             <div className="space-y-1">
-              <div className="text-xs text-surface-500 uppercase">Exhausted Keys ({status.exhausted_count})</div>
+              <div className="text-xs text-surface-500 uppercase">{t('apikeys.exhausted')} ({status.exhausted_count})</div>
               {status.exhausted_keys.map((k) => (
                 <div key={k.id} className="flex items-center gap-3 p-2 bg-surface-700/50 rounded text-sm">
                   <div className="w-2 h-2 bg-red-500/50 rounded-full" />
@@ -416,7 +437,7 @@ function APIKeysTab() {
       {apiKeys.length > 0 && (
         <div className="flex justify-between items-center">
           <div className="text-sm text-surface-400">
-            {apiKeys.length} API key{apiKeys.length !== 1 ? 's' : ''} configured
+            {apiKeys.length} API key{apiKeys.length !== 1 ? 's' : ''} {t('apikeys.configured')}
           </div>
           <button
             onClick={handleValidateAll}
@@ -424,70 +445,90 @@ function APIKeysTab() {
             className="btn-secondary text-sm"
           >
             {isValidatingAll 
-              ? `Validating ${validationProgress.current}/${validationProgress.total}...` 
-              : 'Validate All'}
+              ? `${t('apikeys.validating')} ${validationProgress.current}/${validationProgress.total}...` 
+              : t('apikeys.validate_all')}
           </button>
         </div>
       )}
 
       <div className="space-y-4">
         {apiKeys.map((key) => (
-          <div key={key.id} className="flex items-center gap-4 p-3 bg-surface-800 rounded-lg">
-            <div className="flex-1 min-w-0">
-              <div className="font-medium text-surface-200 font-mono">
-                {key.key.substring(0, 8)}...{key.key.substring(key.key.length - 4)}
+          <div key={key.id} className="p-3 bg-surface-800 rounded-lg space-y-2">
+            <div className="flex items-center gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-surface-200 font-mono">
+                  {key.key.substring(0, 8)}...{key.key.substring(key.key.length - 4)}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-medium text-primary-400">
+                  {key.remaining_credits.toLocaleString()} {t('tts.credits').toLowerCase()}
+                </div>
+                <div className={`text-xs ${key.is_valid ? 'text-green-400' : 'text-red-400'}`}>
+                  {key.is_valid ? t('apikeys.valid') : t('apikeys.invalid')}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleValidateKey(key.id)}
+                  className="btn-ghost p-2"
+                  title="Validate"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => handleRemoveKey(key.id)}
+                  className="btn-ghost p-2 text-red-400 hover:text-red-300"
+                  title="Remove"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
+                  </svg>
+                </button>
               </div>
             </div>
-            <div className="text-right">
-              <div className="text-sm font-medium text-primary-400">
-                {key.remaining_credits.toLocaleString()} credits
+            {/* Proxy Assignment */}
+            {proxies.length > 0 && (
+              <div className="flex items-center gap-2 pt-2 border-t border-surface-700">
+                <span className="text-xs text-surface-500">{t('apikeys.proxy') || 'Proxy'}:</span>
+                <select
+                  value={key.assigned_proxy_id || ''}
+                  onChange={(e) => handleAssignProxy(key.id, e.target.value || null)}
+                  className="flex-1 px-2 py-1 text-xs bg-surface-900 border border-surface-700 rounded"
+                >
+                  <option value="">{t('apikeys.no_proxy') || 'Direct (No Proxy)'}</option>
+                  {proxies.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.host}:{p.port}) {!p.is_healthy && '⚠️'}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className={`text-xs ${key.is_valid ? 'text-green-400' : 'text-red-400'}`}>
-                {key.is_valid ? 'Valid' : 'Invalid'}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleValidateKey(key.id)}
-                className="btn-ghost p-2"
-                title="Validate"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                  />
-                </svg>
-              </button>
-              <button
-                onClick={() => handleRemoveKey(key.id)}
-                className="btn-ghost p-2 text-red-400 hover:text-red-300"
-                title="Remove"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                  />
-                </svg>
-              </button>
-            </div>
+            )}
           </div>
         ))}
 
         {isLoading && (
           <div className="text-center py-8 text-surface-500">
-            Loading API keys...
+            {t('apikeys.loading')}
           </div>
         )}
 
         {!isLoading && apiKeys.length === 0 && (
           <div className="text-center py-8 text-surface-500">
-            No API keys configured. Add one below.
+            {t('apikeys.no_keys')}
           </div>
         )}
       </div>
@@ -503,7 +544,7 @@ function APIKeysTab() {
             type="password"
             value={newKeyValue}
             onChange={(e) => setNewKeyValue(e.target.value)}
-            placeholder="Enter your ElevenLabs API key"
+            placeholder={t('apikeys.add_placeholder')}
             className="input flex-1"
             aria-label="API key"
             onKeyDown={(e) => e.key === 'Enter' && handleAddKey()}
@@ -513,7 +554,7 @@ function APIKeysTab() {
             disabled={!newKeyValue.trim() || isAdding}
             className="btn-primary min-w-[100px]"
           >
-            {isAdding ? 'Validating...' : 'Add'}
+            {isAdding ? t('apikeys.validating') + '...' : t('common.add')}
           </button>
         </div>
       </div>
@@ -522,7 +563,14 @@ function APIKeysTab() {
 }
 
 function ProxiesTab() {
+  const { t } = useTranslation();
   const [proxies, setProxies] = useState<Proxy[]>([]);
+  const [showGuide, setShowGuide] = useState(true);
+  const [showAuth, setShowAuth] = useState(false);
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [importMode, setImportMode] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
   const [newProxy, setNewProxy] = useState({
     name: '',
     host: '',
@@ -536,6 +584,141 @@ function ProxiesTab() {
   useEffect(() => {
     loadProxies();
   }, []);
+
+  // Parse proxy string in various formats
+  function parseProxyString(str: string): { host: string; port: number; username?: string; password?: string; type: string } | null {
+    str = str.trim();
+    if (!str) return null;
+
+    let type = 'http';
+    let host = '';
+    let port = 8080;
+    let username: string | undefined;
+    let password: string | undefined;
+
+    // Remove protocol prefix and detect type
+    if (str.startsWith('socks5://')) {
+      type = 'socks5';
+      str = str.slice(9);
+    } else if (str.startsWith('socks://')) {
+      type = 'socks5';
+      str = str.slice(8);
+    } else if (str.startsWith('https://')) {
+      type = 'https';
+      str = str.slice(8);
+    } else if (str.startsWith('http://')) {
+      type = 'http';
+      str = str.slice(7);
+    }
+
+    // Format: user:pass@host:port
+    if (str.includes('@')) {
+      const [authPart, hostPart] = str.split('@');
+      const authParts = authPart.split(':');
+      if (authParts.length >= 2) {
+        username = authParts[0];
+        password = authParts.slice(1).join(':'); // password might contain ':'
+      }
+      str = hostPart;
+    }
+
+    // Handle IPv6 in brackets: [ipv6]:port
+    if (str.startsWith('[')) {
+      const bracketEnd = str.indexOf(']');
+      if (bracketEnd > 0) {
+        host = str.slice(1, bracketEnd);
+        const remaining = str.slice(bracketEnd + 1);
+        if (remaining.startsWith(':')) {
+          port = parseInt(remaining.slice(1)) || 8080;
+        }
+      }
+    } else {
+      // Format: host:port or host:port:user:pass
+      const parts = str.split(':');
+      
+      if (parts.length === 2) {
+        // host:port
+        host = parts[0];
+        port = parseInt(parts[1]) || 8080;
+      } else if (parts.length === 4) {
+        // host:port:user:pass
+        host = parts[0];
+        port = parseInt(parts[1]) || 8080;
+        username = parts[2];
+        password = parts[3];
+      } else if (parts.length >= 4 && parts[0].match(/^[\d.]+$/) || parts[0].match(/^[a-zA-Z0-9.-]+$/)) {
+        // Likely host:port:user:pass where pass might contain ':'
+        host = parts[0];
+        port = parseInt(parts[1]) || 8080;
+        username = parts[2];
+        password = parts.slice(3).join(':');
+      } else {
+        // Could be IPv6 without brackets
+        // Try to find the last : as port separator
+        const lastColon = str.lastIndexOf(':');
+        if (lastColon > 0) {
+          const potentialPort = parseInt(str.slice(lastColon + 1));
+          if (!isNaN(potentialPort) && potentialPort > 0 && potentialPort <= 65535) {
+            host = str.slice(0, lastColon);
+            port = potentialPort;
+          } else {
+            host = str;
+          }
+        } else {
+          host = str;
+        }
+      }
+    }
+
+    if (!host) return null;
+    return { host, port, username, password, type };
+  }
+
+  async function handleQuickImport() {
+    setImportError(null);
+    const lines = importText.split('\n').filter(l => l.trim());
+    
+    if (lines.length === 0) {
+      setImportError(t('proxies.import_empty') || 'No proxy strings to import');
+      return;
+    }
+
+    let successCount = 0;
+    let failCount = 0;
+    const newProxies: Proxy[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const parsed = parseProxyString(lines[i]);
+      if (parsed) {
+        try {
+          const proxy = await ipcClient.addProxy({
+            name: `Proxy ${proxies.length + newProxies.length + 1}`,
+            host: parsed.host,
+            port: parsed.port,
+            username: parsed.username || null,
+            password: parsed.password || null,
+            proxy_type: parsed.type,
+            enabled: true,
+          });
+          newProxies.push(proxy);
+          successCount++;
+        } catch {
+          failCount++;
+        }
+      } else {
+        failCount++;
+      }
+    }
+
+    setProxies([...proxies, ...newProxies]);
+    
+    if (failCount === 0) {
+      setImportText('');
+      setImportMode(false);
+    } else {
+      setImportError(`${t('proxies.import_result') || 'Imported'}: ${successCount} ${t('proxies.import_success') || 'success'}, ${failCount} ${t('proxies.import_failed') || 'failed'}`);
+    }
+  }
 
   async function loadProxies() {
     try {
@@ -565,6 +748,7 @@ function ProxiesTab() {
         proxy_type: 'http',
         enabled: true,
       });
+      setShowAuth(false);
     } catch (err) {
       console.error('Failed to add proxy:', err);
     }
@@ -580,35 +764,108 @@ function ProxiesTab() {
   }
 
   async function handleTestProxy(id: string) {
+    setTestingId(id);
     try {
       const isHealthy = await ipcClient.testProxy(id);
       setProxies(proxies.map((p) => (p.id === id ? { ...p, is_healthy: isHealthy } : p)));
     } catch (err) {
       console.error('Failed to test proxy:', err);
+      setProxies(proxies.map((p) => (p.id === id ? { ...p, is_healthy: false } : p)));
+    } finally {
+      setTestingId(null);
     }
   }
 
   return (
     <div className="space-y-6">
+      {/* Proxy Guide */}
+      {showGuide && (
+        <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg relative">
+          <button
+            onClick={() => setShowGuide(false)}
+            className="absolute top-2 right-2 text-surface-400 hover:text-surface-200"
+            title={t('proxies.dismiss_guide') || 'Dismiss'}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div className="flex gap-3">
+            <div className="text-blue-400 mt-0.5">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="flex-1 space-y-2">
+              <h3 className="font-medium text-blue-300">{t('proxies.guide_title') || 'How to Use Proxies'}</h3>
+              <div className="text-sm text-surface-300 space-y-2">
+                <p><strong>{t('proxies.guide_what') || 'What are proxies?'}</strong> {t('proxies.guide_what_desc') || 'Proxies route your API requests through an intermediate server, useful for bypassing network restrictions or distributing requests.'}</p>
+                <div className="space-y-1">
+                  <p className="font-medium text-surface-200">{t('proxies.guide_steps') || 'Quick Setup:'}</p>
+                  <ol className="list-decimal list-inside space-y-1 text-surface-400">
+                    <li>{t('proxies.guide_step1') || 'Enter a name to identify this proxy'}</li>
+                    <li>{t('proxies.guide_step2') || 'Enter the proxy host (e.g., proxy.example.com or 192.168.1.100)'}</li>
+                    <li>{t('proxies.guide_step3') || 'Set the port number (common: 8080, 3128, 1080 for SOCKS5)'}</li>
+                    <li>{t('proxies.guide_step4') || 'Select proxy type: HTTP for most cases, SOCKS5 for advanced routing'}</li>
+                    <li>{t('proxies.guide_step5') || 'Click "Test" to verify the proxy works with ElevenLabs API'}</li>
+                  </ol>
+                </div>
+                <p className="text-xs text-surface-500 italic">{t('proxies.guide_tip') || 'Tip: Proxies are automatically used when assigned to API keys. A green status means the proxy can reach ElevenLabs servers.'}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Show guide button if dismissed */}
+      {!showGuide && (
+        <button
+          onClick={() => setShowGuide(true)}
+          className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {t('proxies.show_guide') || 'Show setup guide'}
+        </button>
+      )}
+
+      {/* Proxy List */}
       <div className="space-y-4">
         {proxies.map((proxy) => (
           <div key={proxy.id} className="flex items-center gap-4 p-3 bg-surface-800 rounded-lg">
             <div className="flex-1 min-w-0">
               <div className="font-medium text-surface-200 truncate">{proxy.name}</div>
               <div className="text-sm text-surface-500 font-mono truncate">
-                {proxy.host}:{proxy.port}
+                {proxy.proxy_type.toUpperCase()} · {proxy.host}:{proxy.port}
               </div>
             </div>
             <div className={`text-xs px-2 py-1 rounded ${proxy.is_healthy ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-              {proxy.is_healthy ? 'Healthy' : 'Unhealthy'}
+              {proxy.is_healthy ? t('proxies.healthy') : t('proxies.unhealthy')}
             </div>
             <div className="flex gap-2">
-              <button onClick={() => handleTestProxy(proxy.id)} className="btn-ghost p-2" title="Test">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+              <button 
+                onClick={() => handleTestProxy(proxy.id)} 
+                className="btn-ghost p-2" 
+                title={t('proxies.test_tooltip') || 'Test connection to ElevenLabs API through this proxy'}
+                disabled={testingId === proxy.id}
+              >
+                {testingId === proxy.id ? (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
               </button>
-              <button onClick={() => handleRemoveProxy(proxy.id)} className="btn-ghost p-2 text-red-400" title="Remove">
+              <button 
+                onClick={() => handleRemoveProxy(proxy.id)} 
+                className="btn-ghost p-2 text-red-400" 
+                title={t('proxies.remove_tooltip') || 'Remove this proxy'}
+              >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
@@ -619,51 +876,154 @@ function ProxiesTab() {
 
         {proxies.length === 0 && (
           <div className="text-center py-8 text-surface-500">
-            No proxies configured.
+            {t('proxies.no_proxies')}
           </div>
         )}
       </div>
 
+      {/* Add Proxy Form */}
       <div className="pt-4 border-t border-surface-800 space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <input
-            type="text"
-            value={newProxy.name}
-            onChange={(e) => setNewProxy({ ...newProxy, name: e.target.value })}
-            placeholder="Proxy name"
-            className="input"
-          />
-          <input
-            type="text"
-            value={newProxy.host}
-            onChange={(e) => setNewProxy({ ...newProxy, host: e.target.value })}
-            placeholder="Host"
-            className="input"
-          />
-          <input
-            type="number"
-            value={newProxy.port}
-            onChange={(e) => setNewProxy({ ...newProxy, port: parseInt(e.target.value) || 8080 })}
-            placeholder="Port"
-            className="input"
-          />
-          <select
-            value={newProxy.proxy_type}
-            onChange={(e) => setNewProxy({ ...newProxy, proxy_type: e.target.value })}
-            className="input"
-          >
-            <option value="http">HTTP</option>
-            <option value="https">HTTPS</option>
-            <option value="socks5">SOCKS5</option>
-          </select>
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-medium text-surface-300">{t('proxies.add_new') || 'Add New Proxy'}</div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setImportMode(false)}
+              className={`text-xs px-2 py-1 rounded ${!importMode ? 'bg-primary-500/20 text-primary-400' : 'text-surface-400 hover:text-surface-200'}`}
+            >
+              {t('proxies.manual_mode') || 'Manual'}
+            </button>
+            <button
+              onClick={() => setImportMode(true)}
+              className={`text-xs px-2 py-1 rounded ${importMode ? 'bg-primary-500/20 text-primary-400' : 'text-surface-400 hover:text-surface-200'}`}
+            >
+              {t('proxies.import_mode') || 'Quick Import'}
+            </button>
+          </div>
         </div>
-        <button
-          onClick={handleAddProxy}
-          disabled={!newProxy.name.trim() || !newProxy.host.trim()}
-          className="btn-primary w-full"
-        >
-          Add Proxy
-        </button>
+
+        {importMode ? (
+          /* Quick Import Mode */
+          <div className="space-y-3">
+            <div>
+              <textarea
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                placeholder={t('proxies.import_placeholder') || 'Paste proxy strings (one per line):\nhost:port\nhost:port:user:pass\nuser:pass@host:port\nsocks5://host:port'}
+                className="input w-full h-32 font-mono text-sm"
+              />
+              <p className="text-xs text-surface-500 mt-1">
+                {t('proxies.import_formats') || 'Supported formats: host:port, host:port:user:pass, user:pass@host:port, protocol://...'}
+              </p>
+            </div>
+            {importError && (
+              <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-400">
+                {importError}
+              </div>
+            )}
+            <button
+              onClick={handleQuickImport}
+              disabled={!importText.trim()}
+              className="btn-primary w-full"
+            >
+              {t('proxies.import_button') || 'Import Proxies'}
+            </button>
+          </div>
+        ) : (
+          /* Manual Mode */
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <input
+                  type="text"
+                  value={newProxy.name}
+                  onChange={(e) => setNewProxy({ ...newProxy, name: e.target.value })}
+                  placeholder={t('proxies.name_placeholder') || 'My Proxy'}
+                  className="input w-full"
+                />
+                <p className="text-xs text-surface-500 mt-1">{t('proxies.name_hint') || 'Friendly name to identify this proxy'}</p>
+              </div>
+              <div>
+                <input
+                  type="text"
+                  value={newProxy.host}
+                  onChange={(e) => setNewProxy({ ...newProxy, host: e.target.value })}
+                  placeholder={t('proxies.host_placeholder') || 'proxy.example.com'}
+                  className="input w-full"
+                />
+                <p className="text-xs text-surface-500 mt-1">{t('proxies.host_hint') || 'Hostname or IP address'}</p>
+              </div>
+              <div>
+                <input
+                  type="number"
+                  value={newProxy.port}
+                  onChange={(e) => setNewProxy({ ...newProxy, port: parseInt(e.target.value) || 8080 })}
+                  placeholder="8080"
+                  className="input w-full"
+                  min={1}
+                  max={65535}
+                />
+                <p className="text-xs text-surface-500 mt-1">{t('proxies.port_hint') || 'Common: 8080, 3128, 1080'}</p>
+              </div>
+              <div>
+                <select
+                  value={newProxy.proxy_type}
+                  onChange={(e) => setNewProxy({ ...newProxy, proxy_type: e.target.value })}
+                  className="input w-full"
+                >
+                  <option value="http">HTTP - {t('proxies.type_http_desc') || 'Standard web proxy'}</option>
+                  <option value="https">HTTPS - {t('proxies.type_https_desc') || 'Encrypted proxy'}</option>
+                  <option value="socks5">SOCKS5 - {t('proxies.type_socks5_desc') || 'Advanced routing'}</option>
+                </select>
+                <p className="text-xs text-surface-500 mt-1">{t('proxies.type_hint') || 'HTTP works for most cases'}</p>
+              </div>
+            </div>
+
+            {/* Authentication Toggle */}
+            <div>
+              <button
+                onClick={() => setShowAuth(!showAuth)}
+                className="text-sm text-primary-400 hover:text-primary-300 flex items-center gap-1"
+              >
+                <svg className={`w-3 h-3 transition-transform ${showAuth ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                {t('proxies.auth_toggle') || 'Authentication (optional)'}
+              </button>
+              
+              {showAuth && (
+                <div className="grid grid-cols-2 gap-3 mt-2">
+                  <div>
+                    <input
+                      type="text"
+                      value={newProxy.username}
+                      onChange={(e) => setNewProxy({ ...newProxy, username: e.target.value })}
+                      placeholder={t('proxies.username_placeholder') || 'Username'}
+                      className="input w-full"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="password"
+                      value={newProxy.password}
+                      onChange={(e) => setNewProxy({ ...newProxy, password: e.target.value })}
+                      placeholder={t('proxies.password_placeholder') || 'Password'}
+                      className="input w-full"
+                    />
+                  </div>
+                  <p className="col-span-2 text-xs text-surface-500">{t('proxies.auth_hint') || 'Only required if your proxy requires authentication'}</p>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleAddProxy}
+              disabled={!newProxy.name.trim() || !newProxy.host.trim()}
+              className="btn-primary w-full"
+            >
+              {t('proxies.add_button') || 'Add Proxy'}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1144,6 +1504,166 @@ function AnalyticsTab() {
       <div className="text-xs text-surface-500 flex gap-4">
         {stats.first_use && <span>First use: {new Date(stats.first_use).toLocaleDateString()}</span>}
         {stats.last_use && <span>Last use: {new Date(stats.last_use).toLocaleDateString()}</span>}
+      </div>
+    </div>
+  );
+}
+
+function AppearanceTab() {
+  const { t } = useTranslation();
+  const { config, setConfig } = useAppStore();
+  const [theme, setTheme] = useState(config?.theme || 'dark');
+  const [bgImage, setBgImage] = useState(config?.background_image || '');
+  const [bgOpacity, setBgOpacity] = useState(config?.background_opacity ?? 0.5);
+  const [bgBlur, setBgBlur] = useState(config?.background_blur ?? 0);
+
+  useEffect(() => {
+    if (config) {
+      setTheme(config.theme);
+      setBgImage(config.background_image || '');
+      setBgOpacity(config.background_opacity ?? 0.5);
+      setBgBlur(config.background_blur ?? 0);
+    }
+  }, [config]);
+
+  const applyChanges = async (updates: Record<string, any>) => {
+    // 1. Update Backend
+    for (const [key, value] of Object.entries(updates)) {
+      await ipcClient.setConfig(key, value);
+    }
+    
+    // 2. Update Store
+    if (config) {
+      // Cast to any to handle extended config fields
+      setConfig({ ...config, ...updates } as any);
+    }
+  };
+
+  const handleThemeChange = async (newTheme: string) => {
+    setTheme(newTheme);
+    await applyChanges({ theme: newTheme });
+  };
+
+  const handleBgImageChange = async (newImage: string) => {
+    setBgImage(newImage);
+    await applyChanges({ background_image: newImage });
+  };
+
+  const handleOpacityChange = async (newOpacity: number) => {
+    setBgOpacity(newOpacity);
+    await applyChanges({ background_opacity: newOpacity });
+  };
+  
+  const handleBlurChange = async (newBlur: number) => {
+    setBgBlur(newBlur);
+    await applyChanges({ background_blur: newBlur });
+  };
+
+  async function handleBrowseImage() {
+    try {
+      const api = await getPlatformAPI();
+      const file = await api.dialog.openFile({
+        title: t('settings.browse_image'),
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }]
+      });
+      if (file && file.length > 0) {
+        handleBgImageChange(file[0]);
+      }
+    } catch (err) {
+      console.error('Failed to open file dialog:', err);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Theme Selector */}
+      <div>
+        <label className="block text-sm font-medium text-surface-300 mb-2">
+          {t('settings.theme')}
+        </label>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { id: 'dark', label: t('settings.theme_default'), color: 'bg-slate-900' },
+            { id: 'light', label: t('settings.theme_light'), color: 'bg-white border-2 border-slate-200' },
+            { id: 'midnight', label: t('settings.theme_midnight'), color: 'bg-purple-950' },
+            { id: 'forest', label: t('settings.theme_forest'), color: 'bg-green-950' },
+          ].map((option) => (
+            <button
+              key={option.id}
+              onClick={() => handleThemeChange(option.id)}
+              className={`p-3 rounded-lg border-2 text-left transition-all ${
+                theme === option.id
+                  ? 'border-primary-500 ring-2 ring-primary-500/20'
+                  : 'border-surface-700 hover:border-surface-600'
+              }`}
+            >
+              <div className={`w-full h-8 rounded mb-2 ${option.color}`} />
+              <div className="text-sm font-medium text-surface-200">{option.label}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Background Image */}
+      <div>
+        <label className="block text-sm font-medium text-surface-300 mb-2">
+          {t('settings.background_image')}
+        </label>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={bgImage}
+            onChange={(e) => handleBgImageChange(e.target.value)}
+            placeholder="Image URL or local path..."
+            className="input flex-1"
+          />
+          <button onClick={handleBrowseImage} className="btn-secondary">
+            {t('common.browse')}
+          </button>
+          {bgImage && (
+            <button onClick={() => handleBgImageChange('')} className="btn-ghost text-red-400">
+              {t('common.clear')}
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-surface-500 mt-1">
+          Supported: PNG, JPG, WEBP, GIF.
+        </p>
+      </div>
+
+      {/* Opacity Slider */}
+      <div>
+        <div className="flex justify-between mb-2">
+          <label className="text-sm font-medium text-surface-300">{t('settings.background_opacity')}</label>
+          <span className="text-sm text-surface-400">{Math.round(bgOpacity * 100)}%</span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={bgOpacity}
+          onChange={(e) => handleOpacityChange(parseFloat(e.target.value))}
+          className="w-full h-2 bg-surface-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
+        />
+        <p className="text-xs text-surface-500 mt-1">Image opacity (Lower = more transparent/fainter).</p>
+      </div>
+      
+      {/* Blur Slider */}
+      <div>
+        <div className="flex justify-between mb-2">
+          <label className="text-sm font-medium text-surface-300">{t('settings.background_blur')}</label>
+          <span className="text-sm text-surface-400">{bgBlur}px</span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="20"
+          step="1"
+          value={bgBlur}
+          onChange={(e) => handleBlurChange(parseInt(e.target.value))}
+          className="w-full h-2 bg-surface-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
+        />
       </div>
     </div>
   );

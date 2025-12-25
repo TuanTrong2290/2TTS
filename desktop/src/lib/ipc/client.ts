@@ -13,7 +13,7 @@ import {
 } from './types';
 import { getPlatformAPI } from '../platform';
 
-const UI_VERSION = '1.2.4';
+const UI_VERSION = '1.4.6';
 const PROTOCOL_VERSION = 1;
 const DEFAULT_TIMEOUT = 30000;
 
@@ -153,7 +153,8 @@ class IPCClient {
   }
 
   async testProxy(id: string): Promise<boolean> {
-    return this.call<boolean>('proxies.test', { id });
+    const result = await this.call<{ success: boolean; status_code?: number; error?: string }>('proxies.test', { id });
+    return result.success;
   }
 
   async exportDiagnostics(): Promise<string> {
@@ -408,8 +409,10 @@ class IPCClient {
     gender?: string;
     language?: string;
     use_case?: string;
-  }): Promise<Voice[]> {
-    return this.call<Voice[]>('voices.search', params);
+    page_size?: number;
+    page?: number;
+  }): Promise<{ voices: Voice[]; has_more: boolean; total_count: number; page: number }> {
+    return this.call<{ voices: Voice[]; has_more: boolean; total_count: number; page: number }>('voices.search', params);
   }
 
   async getVoiceDetails(voiceId: string): Promise<VoiceDetails> {
@@ -476,7 +479,7 @@ export interface TranscriptionResult {
     start: number;
     end: number;
     text: string;
-    speaker?: string;
+    speaker_id?: string;
   }>;
   speakers: Array<{ id: string; name: string }>;
 }

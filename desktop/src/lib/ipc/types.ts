@@ -67,6 +67,7 @@ export interface VoiceSettings {
   similarity_boost: number;
   style?: number;
   use_speaker_boost?: boolean;
+  speed?: number;
 }
 
 export interface TTSJobParams {
@@ -75,6 +76,25 @@ export interface TTSJobParams {
   model_id?: string;
   output_path: string;
   voice_settings?: VoiceSettings;
+  debug?: boolean;
+}
+
+export interface TTSDebugData {
+  request: {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    payload: string;
+    proxy: string;
+  };
+  response: {
+    status_code: number;
+    headers: Record<string, string>;
+    content_type: string;
+    body?: unknown;
+    audio_file?: string;
+    audio_duration?: number;
+  } | null;
 }
 
 export interface TTSJobResult {
@@ -83,10 +103,14 @@ export interface TTSJobResult {
   duration_ms: number;
   characters_used: number;
   language_code?: string;
+  debug?: TTSDebugData;
 }
 
 export interface ConfigResult {
   theme: string;
+  background_image?: string | null;
+  background_opacity?: number;
+  background_blur?: number;
   app_language: string;
   default_output_folder: string;
   thread_count: number;

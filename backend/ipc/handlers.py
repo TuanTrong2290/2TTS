@@ -28,7 +28,7 @@ def get_api() -> ElevenLabsAPI:
     return _elevenlabs_api
 
 
-BACKEND_VERSION = "1.2.4"
+BACKEND_VERSION = "1.4.6"
 PROTOCOL_VERSION = 1
 MIN_UI_VERSION = "1.0.0"
 
@@ -318,7 +318,7 @@ def register_handlers(server: JsonRpcServer):
                 "port": p.port,
                 "username": p.username,
                 "password": None,  # Don't expose password
-                "proxy_type": p.proxy_type,
+                "proxy_type": p.proxy_type.value.lower() if hasattr(p.proxy_type, 'value') else str(p.proxy_type).lower(),
                 "enabled": p.enabled,
                 "is_healthy": p.is_healthy
             }
@@ -334,6 +334,14 @@ def register_handlers(server: JsonRpcServer):
         if not name or not host:
             raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "Name and host are required")
         
+        # Convert proxy_type string to enum
+        from core.models import ProxyType
+        proxy_type_str = params.get("proxy_type", "http").upper()
+        try:
+            proxy_type = ProxyType[proxy_type_str] if proxy_type_str in ProxyType.__members__ else ProxyType.HTTP
+        except (KeyError, ValueError):
+            proxy_type = ProxyType.HTTP
+        
         config = get_config()
         proxy = Proxy(
             id=str(uuid.uuid4()),
@@ -342,7 +350,7 @@ def register_handlers(server: JsonRpcServer):
             port=port,
             username=params.get("username"),
             password=params.get("password"),
-            proxy_type=params.get("proxy_type", "http"),
+            proxy_type=proxy_type,
             enabled=params.get("enabled", True),
             is_healthy=True
         )
@@ -355,7 +363,7 @@ def register_handlers(server: JsonRpcServer):
             "port": proxy.port,
             "username": proxy.username,
             "password": None,
-            "proxy_type": proxy.proxy_type,
+            "proxy_type": proxy.proxy_type.value.lower() if hasattr(proxy.proxy_type, 'value') else str(proxy.proxy_type).lower(),
             "enabled": proxy.enabled,
             "is_healthy": proxy.is_healthy
         }
@@ -372,20 +380,41 @@ def register_handlers(server: JsonRpcServer):
         return {"success": True}
     
     @server.method("proxies.test")
-    def proxies_test(params: dict, srv: JsonRpcServer) -> bool:
+    def proxies_test(params: dict, srv: JsonRpcServer) -> dict:
         proxy_id = params.get("id")
         if not proxy_id:
             raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "ID is required")
         
         config = get_config()
-        for proxy in config.proxies:
-            if proxy.id == proxy_id:
-                # TODO: Actually test the proxy
-                proxy.is_healthy = True
-                config.update_proxy(proxy)
-                return True
+        proxy = None
+        for p in config.proxies:
+            if p.id == proxy_id:
+                proxy = p
+                break
         
-        return False
+        if not proxy:
+            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "Proxy not found")
+        
+        import requests
+        try:
+            proxy_url = proxy.get_url()
+            proxies_dict = {"http": proxy_url, "https": proxy_url}
+            
+            response = requests.get(
+                "https://api.elevenlabs.io/v1/voices",
+                proxies=proxies_dict,
+                timeout=10
+            )
+            
+            is_healthy = response.status_code in (200, 401)  # 401 means proxy works but no API key
+            proxy.is_healthy = is_healthy
+            config.update_proxy(proxy)
+            
+            return {"success": is_healthy, "status_code": response.status_code}
+        except Exception as e:
+            proxy.is_healthy = False
+            config.update_proxy(proxy)
+            return {"success": False, "error": str(e)}
     
     @server.method("voices.list")
     def voices_list(params: dict, srv: JsonRpcServer) -> List[dict]:
@@ -536,15 +565,19 @@ def register_handlers(server: JsonRpcServer):
         
         srv.send_progress(job_id, 30, "Generating audio...")
         
+        # Check if debug mode is enabled
+        debug_mode = params.get("debug", False)
+        
         # Call ElevenLabs TTS API
-        success, message, duration = api.text_to_speech(
+        success, message, duration, debug_data = api.text_to_speech(
             text=text,
             voice_id=voice_id,
             api_key=api_key,
             output_path=output_path,
             settings=settings,
             proxy=proxy,
-            language_code=language_code
+            language_code=language_code,
+            debug=debug_mode
         )
         
         if not success:
@@ -567,13 +600,19 @@ def register_handlers(server: JsonRpcServer):
         
         srv.send_progress(job_id, 100, "Complete")
         
-        return {
+        result = {
             "job_id": job_id,
             "output_path": output_path,
             "duration_ms": int((duration or 0) * 1000),
             "characters_used": len(text),
             "language_code": language_code
         }
+        
+        # Include debug data if requested
+        if debug_mode and debug_data:
+            result["debug"] = debug_data
+        
+        return result
     
     @server.method("jobs.cancel")
     def jobs_cancel(params: dict, srv: JsonRpcServer) -> dict:
@@ -826,7 +865,7 @@ def register_handlers(server: JsonRpcServer):
         
         srv.send_progress(job_id, 10, "Starting transcription...")
         
-        success, result = api.transcribe_audio(
+        success, msg, result = api.transcribe(
             file_path=file_path,
             api_key=api_key,
             language=language,
@@ -836,7 +875,7 @@ def register_handlers(server: JsonRpcServer):
         )
         
         if not success:
-            raise JsonRpcError(ErrorCodes.APP_TTS_FAILED, f"Transcription failed: {result}")
+            raise JsonRpcError(ErrorCodes.APP_TTS_FAILED, f"Transcription failed: {msg}")
         
         srv.send_progress(job_id, 100, "Complete")
         
@@ -849,7 +888,7 @@ def register_handlers(server: JsonRpcServer):
                     "start": s.start,
                     "end": s.end,
                     "text": s.text,
-                    "speaker": s.speaker
+                    "speaker_id": s.speaker_id
                 }
                 for s in result.segments
             ],
@@ -1175,107 +1214,8 @@ def register_handlers(server: JsonRpcServer):
         return {"success": True}
 
     # ============================================
-    # PROXY MANAGEMENT HANDLERS
+    # PROXY ASSIGNMENT HANDLER
     # ============================================
-    
-    @server.method("proxies.list")
-    def proxies_list(params: dict, srv: JsonRpcServer) -> List[dict]:
-        """List all proxies"""
-        config = get_config()
-        return [
-            {
-                "id": p.id,
-                "name": p.name,
-                "host": p.host,
-                "port": p.port,
-                "username": p.username,
-                "proxy_type": p.proxy_type,
-                "is_enabled": p.is_enabled
-            }
-            for p in config.proxies
-        ]
-    
-    @server.method("proxies.add")
-    def proxies_add(params: dict, srv: JsonRpcServer) -> dict:
-        """Add a proxy"""
-        name = params.get("name")
-        host = params.get("host")
-        port = params.get("port")
-        username = params.get("username", "")
-        password = params.get("password", "")
-        proxy_type = params.get("proxy_type", "http")
-        
-        if not name or not host or not port:
-            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "name, host and port are required")
-        
-        from core.models import Proxy
-        
-        proxy = Proxy(
-            id=str(uuid.uuid4()),
-            name=name,
-            host=host,
-            port=port,
-            username=username,
-            password=password,
-            proxy_type=proxy_type,
-            is_enabled=True
-        )
-        
-        config = get_config()
-        config.add_proxy(proxy)
-        
-        return {
-            "id": proxy.id,
-            "name": proxy.name,
-            "host": proxy.host,
-            "port": proxy.port,
-            "proxy_type": proxy.proxy_type
-        }
-    
-    @server.method("proxies.remove")
-    def proxies_remove(params: dict, srv: JsonRpcServer) -> dict:
-        """Remove a proxy"""
-        proxy_id = params.get("id")
-        if not proxy_id:
-            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "id is required")
-        
-        config = get_config()
-        config.remove_proxy(proxy_id)
-        return {"success": True}
-    
-    @server.method("proxies.test")
-    def proxies_test(params: dict, srv: JsonRpcServer) -> dict:
-        """Test proxy connection"""
-        proxy_id = params.get("id")
-        if not proxy_id:
-            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "id is required")
-        
-        config = get_config()
-        proxy = None
-        for p in config.proxies:
-            if p.id == proxy_id:
-                proxy = p
-                break
-        
-        if not proxy:
-            raise JsonRpcError(ErrorCodes.INVALID_PARAMS, "Proxy not found")
-        
-        import requests
-        try:
-            proxies = {
-                "http": f"{proxy.proxy_type}://{proxy.host}:{proxy.port}",
-                "https": f"{proxy.proxy_type}://{proxy.host}:{proxy.port}"
-            }
-            if proxy.username and proxy.password:
-                proxies = {
-                    "http": f"{proxy.proxy_type}://{proxy.username}:{proxy.password}@{proxy.host}:{proxy.port}",
-                    "https": f"{proxy.proxy_type}://{proxy.username}:{proxy.password}@{proxy.host}:{proxy.port}"
-                }
-            
-            response = requests.get("https://api.elevenlabs.io/v1/voices", proxies=proxies, timeout=10)
-            return {"success": True, "status_code": response.status_code}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
     
     @server.method("proxies.assign_to_key")
     def proxies_assign_to_key(params: dict, srv: JsonRpcServer) -> dict:
@@ -1301,13 +1241,15 @@ def register_handlers(server: JsonRpcServer):
     # ============================================
     
     @server.method("voices.search")
-    def voices_search(params: dict, srv: JsonRpcServer) -> List[dict]:
-        """Search voices with filters"""
+    def voices_search(params: dict, srv: JsonRpcServer) -> dict:
+        """Search voices with filters and pagination"""
         query = params.get("query", "")
         category = params.get("category")
         gender = params.get("gender")
         language = params.get("language")
         use_case = params.get("use_case")
+        page_size = params.get("page_size", 30)
+        page = params.get("page", 0)
         
         config = get_config()
         api = get_api()
@@ -1318,27 +1260,34 @@ def register_handlers(server: JsonRpcServer):
         
         proxy = config.get_proxy_for_key(api_key)
         
-        voices = api.search_voices(
+        voices, has_more, total_count = api.search_voices(
             api_key=api_key,
             proxy=proxy,
             query=query,
             gender=gender,
             language=language,
             use_case=use_case,
-            category=category
+            category=category,
+            page_size=page_size,
+            page=page
         )
         
-        return [
-            {
-                "voice_id": v.voice_id,
-                "name": v.name,
-                "category": v.category,
-                "labels": v.labels,
-                "description": v.description,
-                "preview_url": v.preview_url
-            }
-            for v in voices
-        ]
+        return {
+            "voices": [
+                {
+                    "voice_id": v.voice_id,
+                    "name": v.name,
+                    "category": v.category,
+                    "labels": v.labels,
+                    "description": v.description,
+                    "preview_url": v.preview_url
+                }
+                for v in voices
+            ],
+            "has_more": has_more,
+            "total_count": total_count,
+            "page": page
+        }
     
     @server.method("voices.get_details")
     def voices_get_details(params: dict, srv: JsonRpcServer) -> dict:
@@ -1430,14 +1379,15 @@ def register_handlers(server: JsonRpcServer):
                 except ValueError:
                     pass
             
-            success, message, duration = api.text_to_speech(
+            success, message, duration, _ = api.text_to_speech(
                 text=text,
                 voice_id=voice_id,
                 api_key=api_key,
                 output_path=output_path,
                 settings=voice_settings,
                 proxy=proxy,
-                language_code=lang
+                language_code=lang,
+                debug=False
             )
             
             if success:

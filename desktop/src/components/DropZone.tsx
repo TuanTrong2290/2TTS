@@ -1,5 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { getPlatformAPI } from '../lib/platform';
+import { useTranslation } from '../lib/i18n';
 
 interface DropZoneProps {
   onFilesDropped: (files: string[]) => void;
@@ -8,6 +10,26 @@ interface DropZoneProps {
 
 export default function DropZone({ onFilesDropped, compact = false }: DropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const { t } = useTranslation();
+  const onFilesDroppedRef = useRef(onFilesDropped);
+  
+  // Keep ref updated
+  useEffect(() => {
+    onFilesDroppedRef.current = onFilesDropped;
+  }, [onFilesDropped]);
+
+  // Listen for Tauri drag-drop events
+  useEffect(() => {
+    const unlisten = listen<string[]>('files-dropped', (event) => {
+      if (event.payload && event.payload.length > 0) {
+        onFilesDroppedRef.current(event.payload);
+      }
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -25,20 +47,8 @@ export default function DropZone({ onFilesDropped, compact = false }: DropZonePr
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-
-    const files: string[] = [];
-    if (e.dataTransfer.files) {
-      for (let i = 0; i < e.dataTransfer.files.length; i++) {
-        const file = e.dataTransfer.files[i] as File & { path?: string };
-        if (file.path) {
-          files.push(file.path);
-        }
-      }
-    }
-    if (files.length > 0) {
-      onFilesDropped(files);
-    }
-  }, [onFilesDropped]);
+    // File paths are handled by Tauri's files-dropped event
+  }, []);
 
   const handleBrowse = async () => {
     try {
@@ -80,7 +90,7 @@ export default function DropZone({ onFilesDropped, compact = false }: DropZonePr
         <svg className="w-4 h-4 text-surface-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
-        <span className="text-sm text-surface-400">Drop files or click to import</span>
+        <span className="text-sm text-surface-400">{t('tts.drop_files')}</span>
       </div>
     );
   }
@@ -104,10 +114,10 @@ export default function DropZone({ onFilesDropped, compact = false }: DropZonePr
       <div className="text-5xl">📂</div>
       <div className="text-center">
         <p className="text-lg font-medium text-surface-200">
-          Drop files here or click to browse
+          {t('tts.drop_files')}
         </p>
         <p className="text-sm text-surface-500 mt-1">
-          Supports SRT, TXT, and DOCX files
+          {t('tts.supported_formats')}
         </p>
       </div>
       <div className="flex items-center gap-2 text-xs text-surface-600">

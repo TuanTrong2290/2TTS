@@ -16,6 +16,8 @@ export interface UpdateState {
   progress: number;
   error: string | null;
   updateInfo: UpdateInfo | null;
+  upToDate: boolean;
+  currentVersion: string | null;
 }
 
 type UpdateListener = (state: UpdateState) => void;
@@ -28,6 +30,8 @@ class UpdateManager {
     progress: 0,
     error: null,
     updateInfo: null,
+    upToDate: false,
+    currentVersion: null,
   };
   
   private listeners: Set<UpdateListener> = new Set();
@@ -50,10 +54,10 @@ class UpdateManager {
     this.notify();
   }
 
-  async checkForUpdates(_silent = false): Promise<boolean> {
+  async checkForUpdates(silent = false): Promise<boolean> {
     if (this.state.checking || this.state.downloading) return false;
 
-    this.setState({ checking: true, error: null });
+    this.setState({ checking: true, error: null, upToDate: false });
 
     try {
       console.log('[Updater] Checking for updates...');
@@ -67,6 +71,7 @@ class UpdateManager {
         this.setState({
           checking: false,
           available: true,
+          currentVersion,
           updateInfo: {
             version: update.version,
             currentVersion,
@@ -81,6 +86,8 @@ class UpdateManager {
           checking: false,
           available: false,
           updateInfo: null,
+          currentVersion,
+          upToDate: !silent,
         });
         return false;
       }
@@ -137,6 +144,10 @@ class UpdateManager {
       updateInfo: null,
     });
     this.pendingUpdate = null;
+  }
+
+  dismissUpToDate() {
+    this.setState({ upToDate: false });
   }
 
   getState(): UpdateState {

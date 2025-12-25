@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "2TTS",
-  "version": "1.2.4",
+  "version": "1.4.6",
   "identifier": "com.2tts.app",
   "build": {
     "frontendDist": "../dist",

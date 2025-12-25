@@ -107,6 +107,7 @@ class Voice:
 @dataclass
 class Proxy:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    name: str = ""
     host: str = ""
     port: int = 8080
     proxy_type: ProxyType = ProxyType.HTTP
@@ -121,11 +122,16 @@ class Proxy:
         if self.username and self.password:
             auth = f"{self.username}:{self.password}@"
         protocol = "socks5" if self.proxy_type == ProxyType.SOCKS5 else "http"
-        return f"{protocol}://{auth}{self.host}:{self.port}"
+        # IPv6 addresses need to be wrapped in brackets
+        host = self.host
+        if ':' in host and not host.startswith('['):
+            host = f"[{host}]"
+        return f"{protocol}://{auth}{host}:{self.port}"
     
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
+            "name": self.name,
             "host": self.host,
             "port": self.port,
             "proxy_type": self.proxy_type.value,
@@ -139,6 +145,7 @@ class Proxy:
     def from_dict(cls, data: Dict[str, Any]) -> "Proxy":
         return cls(
             id=data.get("id", str(uuid.uuid4())),
+            name=data.get("name", ""),
             host=data["host"],
             port=data["port"],
             proxy_type=ProxyType(data.get("proxy_type", "HTTP")),

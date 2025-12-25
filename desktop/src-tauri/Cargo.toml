@@ -1,6 +1,6 @@
 [package]
 name = "tts-app"
-version = "1.2.4"
+version = "1.4.6"
 description = "2TTS - Text to Speech Desktop App"
 authors = ["2TTS"]
 license = "MIT"

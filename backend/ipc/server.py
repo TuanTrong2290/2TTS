@@ -5,6 +5,7 @@ import threading
 from typing import Callable, Any, Optional, Dict
 from .types import JsonRpcError, ErrorCodes, make_response, make_notification
 
+# Note: UTF-8 encoding for stdin/stdout is configured in main.py (entry point)
 
 Handler = Callable[..., Any]
 

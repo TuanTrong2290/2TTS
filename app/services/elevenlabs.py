@@ -239,12 +239,17 @@ class ElevenLabsAPI:
         gender: Optional[str] = None,
         language: Optional[str] = None,
         use_case: Optional[str] = None,
-        category: Optional[str] = None
-    ) -> List[Voice]:
-        """Fetch voices from ElevenLabs public voice library with filters"""
+        category: Optional[str] = None,
+        page_size: int = 30,
+        page: int = 0
+    ) -> Tuple[List[Voice], bool, int]:
+        """
+        Fetch voices from ElevenLabs public voice library with filters and pagination.
+        Returns: (voices, has_more, total_count)
+        """
         voices = []
         
-        params = {"page_size": 100}
+        params = {"page_size": min(page_size, 100)}
         if query:
             params["search"] = query
         if gender:
@@ -255,6 +260,8 @@ class ElevenLabsAPI:
             params["use_cases"] = use_case
         if category:
             params["category"] = category
+        if page > 0:
+            params["page"] = page
         
         try:
             # Get shared/public voices
@@ -268,6 +275,9 @@ class ElevenLabsAPI:
             
             if response.status_code == 200:
                 data = response.json()
+                has_more = data.get("has_more", False)
+                total_count = data.get("total_count", 0)
+                
                 for v in data.get("voices", []):
                     voice = Voice(
                         voice_id=v.get("voice_id", v.get("public_owner_id", "")),
@@ -279,10 +289,11 @@ class ElevenLabsAPI:
                         description=v.get("description", "")
                     )
                     voices.append(voice)
+                return voices, has_more, total_count
         except requests.RequestException:
             pass
         
-        return voices
+        return voices, False, 0
     
     def browse_voice_library(
         self,
@@ -724,11 +735,13 @@ class ElevenLabsAPI:
         output_path: str,
         settings: Optional[VoiceSettings] = None,
         proxy: Optional[Proxy] = None,
-        language_code: Optional[str] = None
-    ) -> Tuple[bool, str, Optional[float]]:
+        language_code: Optional[str] = None,
+        debug: bool = False
+    ) -> Tuple[bool, str, Optional[float], Optional[Dict[str, Any]]]:
         """
         Convert text to speech
-        Returns: (success, message, audio_duration)
+        Returns: (success, message, audio_duration, debug_info)
+        If debug=False, debug_info will be None
         """
         if settings is None:
             settings = VoiceSettings()
@@ -756,7 +769,22 @@ class ElevenLabsAPI:
         
         # Build debug info
         proxy_info = f" via proxy {proxy.host}:{proxy.port}" if proxy else ""
-        debug_info = f"[voice={voice_id}, model={settings.model.value}, key={api_key.key[:8]}...{proxy_info}]"
+        debug_str = f"[voice={voice_id}, model={settings.model.value}, key={api_key.key[:8]}...{proxy_info}]"
+        
+        # Debug data to return
+        debug_data = None
+        if debug:
+            import json
+            debug_data = {
+                "request": {
+                    "url": url,
+                    "method": "POST",
+                    "headers": {k: (v[:20] + "..." if k.lower() == "xi-api-key" else v) for k, v in headers.items()},
+                    "payload": json.dumps(payload, indent=2, ensure_ascii=False),
+                    "proxy": proxy_info or "None"
+                },
+                "response": None
+            }
         
         try:
             response = self._session.post(
@@ -768,6 +796,14 @@ class ElevenLabsAPI:
                 stream=True
             )
             
+            # Capture response debug info
+            if debug:
+                debug_data["response"] = {
+                    "status_code": response.status_code,
+                    "headers": dict(response.headers),
+                    "content_type": response.headers.get("Content-Type", "unknown")
+                }
+            
             if response.status_code == 200:
                 # Save audio file
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -778,18 +814,24 @@ class ElevenLabsAPI:
                 # Get audio duration
                 duration = self._get_audio_duration(output_path)
                 
-                return True, "Success", duration
+                if debug:
+                    debug_data["response"]["audio_file"] = output_path
+                    debug_data["response"]["audio_duration"] = duration
+                
+                return True, "Success", duration, debug_data
             
             elif response.status_code == 429:
-                return False, "RATE_LIMIT", None
+                return False, "RATE_LIMIT", None, debug_data
             
             elif response.status_code == 401:
                 api_key.is_valid = False
-                return False, f"Invalid API key {debug_info}", None
+                return False, f"Invalid API key {debug_str}", None, debug_data
             
             else:
                 try:
                     error_data = response.json()
+                    if debug:
+                        debug_data["response"]["body"] = error_data
                     if isinstance(error_data.get("detail"), dict):
                         error_msg = error_data["detail"].get("message", str(error_data["detail"]))
                     elif isinstance(error_data.get("detail"), str):
@@ -798,20 +840,22 @@ class ElevenLabsAPI:
                         error_msg = str(error_data)
                 except:
                     error_msg = response.text[:500] if response.text else "No response body"
-                return False, f"HTTP {response.status_code}: {error_msg} {debug_info}", None
+                    if debug:
+                        debug_data["response"]["body"] = error_msg
+                return False, f"HTTP {response.status_code}: {error_msg} {debug_str}", None, debug_data
                 
         except requests.Timeout as e:
-            return False, f"Request timeout after 120s {debug_info}: {type(e).__name__}", None
+            return False, f"Request timeout after 120s {debug_str}: {type(e).__name__}", None, debug_data
         except requests.exceptions.ProxyError as e:
-            return False, f"Proxy error {debug_info}: {type(e).__name__} - {str(e)}", None
+            return False, f"Proxy error {debug_str}: {type(e).__name__} - {str(e)}", None, debug_data
         except requests.exceptions.SSLError as e:
-            return False, f"SSL error {debug_info}: {type(e).__name__} - {str(e)}", None
+            return False, f"SSL error {debug_str}: {type(e).__name__} - {str(e)}", None, debug_data
         except requests.exceptions.ConnectionError as e:
-            return False, f"Connection error {debug_info}: {type(e).__name__} - {str(e)}", None
+            return False, f"Connection error {debug_str}: {type(e).__name__} - {str(e)}", None, debug_data
         except requests.RequestException as e:
-            return False, f"Request error {debug_info}: {type(e).__name__} - {str(e)}", None
+            return False, f"Request error {debug_str}: {type(e).__name__} - {str(e)}", None, debug_data
         except Exception as e:
-            return False, f"Unexpected error {debug_info}: {type(e).__name__} - {str(e)}", None
+            return False, f"Unexpected error {debug_str}: {type(e).__name__} - {str(e)}", None, debug_data
     
     def _get_audio_duration(self, file_path: str) -> Optional[float]:
         """Get duration of audio file in seconds"""
